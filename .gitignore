@@ -14,8 +14,9 @@ work/
 *.bin
 *.rom
 
-# Serial and monitor logs from a run.
+# Serial and monitor logs from a run, including a probe's own stdout.
 *.log
+*.out
 
 # OVMF variable stores. Copied fresh per run; nothing persists between boots.
 *.fd

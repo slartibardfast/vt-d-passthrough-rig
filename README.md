@@ -22,6 +22,14 @@ CSMWrap is loaded by OVMF from a FAT16 partition on the guest disk itself rather
 from a separate helper disk, because CSMWrap sets its own boot device to the disk it
 was loaded from. A separate disk makes SeaBIOS execute a non-bootable MBR and hang.
 
+Two processors. CSMWrap reserves the highest-numbered AP as its own system thread and
+hides it from the OS by patching the MADT, so at `-smp 2` the OS sees a single processor
+and never brings up an application processor. This is load-bearing rather than a
+performance choice: at `-smp 4` the three OS-visible processors deadlock on a kernel
+spinlock while the reserved AP sits in QEMU's post-triple-fault reset state, and at
+`-smp 1` CSMWrap halts with `No AP available for BIOS proxy`. See the comment block in
+`run-gpu-vm.sh` for the full account.
+
 ## Disk images
 
 | image | what it is | sha256 |
@@ -51,6 +59,24 @@ Guest configuration:
   is the boot path; `run-gpu-vm.sh` attaches only `xp64-gpu.raw`. It refuses to write
   if the ini is absent, because a script that mounts, writes and reads back proves it
   wrote a file, not that it wrote the one that is read.
+
+Diagnosing a boot:
+
+- `probe-freeze.sh [settle] [samples]` — runs the VM, waits until the framebuffer stops
+  changing, then reads **every** vCPU's registers through the monitor and disassembles
+  the BSP's RIP. Reading all four is the point: a vCPU that triple-faulted shows
+  `CR0=0x11` with `CR3`/`CR4`/`EFER` zero and no RIP at all, which is what
+  distinguishes "the OS lost a processor" from "the OS is merely slow".
+- `probe-login.sh [settle]` — boots, types the Administrator password, and captures the
+  logon screen and the desktop. Reaching the logon screen proves only that the loader
+  and kernel started.
+- `ppm2png.py in.ppm out.png [factor]` — converts a QEMU screendump to PNG. There is no
+  ImageMagick on this host, and reading the guest's screen is the only way to tell a
+  booted Windows from a frozen boot, so this is a rig tool rather than a convenience.
+  Nearest-neighbour downscaling, because the things being read are text screens and
+  progress bars where smoothing would blur the pixels that carry the information.
+- `EXTRA_QEMU` is honoured by `probe-freeze.sh`, word-split on purpose, so a sweep can
+  vary exactly one flag against an otherwise identical machine.
 
 Monitor and input:
 
@@ -82,3 +108,14 @@ These cost real time and are recorded here because a later session will meet the
   read zero when a VM is running.
 - A single-quoted `screendump` target keeps `$i` literal.
 - `boot.ini` and the INFs are CRLF, so a `$` anchor never matches in them.
+- `set-ini.sh` only ever writes. It takes a list of keys to set, and every argument is
+  appended, so calling it with a placeholder key to *read* the file injects that key
+  into the guest's configuration. Mount the partition and read it directly instead.
+- The QEMU monitor needs `0x` in front of an address: `x/8i fffff800...` answers
+  "invalid char 'f' in expression" and reads like a bad address.
+- `cpu N` followed by a failed `info registers` leaves the *previous* CPU selected, so
+  a sweep over `cpu 0..3` silently reports the same CPU twice. Check that the reply
+  names the CPU asked for rather than assuming the switch took.
+- `x/16i` and `xp` accept `0x...`; there is no `xm` command in this QEMU.
+- A booted XP desktop is a *static* framebuffer, so "the screen stopped changing" is not
+  by itself evidence of a hang. A screendump has to be looked at.

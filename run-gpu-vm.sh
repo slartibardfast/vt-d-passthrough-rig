@@ -21,6 +21,23 @@
 #
 #   * The card's OpROM is its own hash-verified dump, so CSMWrap is offered the
 #     exact vendor VBIOS rather than SeaVGABIOS.
+#   * The machine gets two CPUs, not four. CSMWrap reserves the highest-numbered
+#     AP as its own system thread and hides it from the OS by patching the MADT,
+#     but SeaBIOS separately learns the CPU count from fw_cfg, which counts every
+#     vCPU QEMU created including the one CSMWrap stole, and it builds the legacy
+#     MP table from that. At -smp 4 the OS-visible processors are APIC 0, 1 and 2,
+#     and the boot deadlocks: the three live CPUs end up spinning on one kernel
+#     spinlock while the reserved AP sits in QEMU's post-triple-fault reset state,
+#     CR0=0x11 with no RIP. At -smp 2 there is exactly one OS-visible processor,
+#     no application processor is ever brought up, and Windows XP x64 boots to the
+#     logon screen and then to the desktop. At -smp 1 CSMWrap halts outright with
+#     "No AP available for BIOS proxy", so two is the floor and the smallest count
+#     that boots is the one used here. probe-freeze.sh reads every vCPU's
+#     registers at the freeze, which is how the deadlock was told apart from a
+#     slow boot.
+#
+#   * SeaBIOS runs at CONFIG_DEBUG_LEVEL=1 and says nothing after handoff, so the
+#     screen is the only instrument during the legacy phase.
 set -euo pipefail
 
 RIG=/home/dconnolly/xp64-rig
@@ -35,7 +52,7 @@ exec qemu-system-x86_64 \
   -name xp64-290x \
   -machine pc,accel=kvm \
   -cpu host,-x2apic \
-  -smp 4 \
+  -smp 2 \
   -m 4096 \
   -rtc base=localtime \
   -nodefaults \
