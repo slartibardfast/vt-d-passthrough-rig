@@ -1,0 +1,45 @@
+;SetupMgrTag
+[Data]
+AutoPartition=1
+MsDosInitiated="0"
+UnattendedInstall="Yes"
+AutomaticUpdates="Yes"
+
+[Unattended]
+UnattendMode=FullUnattended
+UnattendedSwitch = "Yes"
+WaitForReboot = "No"
+OemSkipEula=Yes
+OemPreinstall=No
+TargetPath=\WINDOWS
+
+[GuiUnattended]
+AdminPassword=password
+EncryptedAdminPassword=No
+OEMSkipRegional=1
+OemSkipWelcome=1
+TimeZone="(GMT) Coordinated Universal Time"
+
+[UserData]
+ProductKey=B66VY-4D94T-TPPD4-43F72-8X4FY
+FullName="winxp64-r290x"
+OrgName="winxp64-r290x"
+ComputerName=WINXP64R290X
+
+[Display]
+BitsPerPel=32
+Xresolution=1024
+YResolution=768
+
+[RegionalSettings]
+LanguageGroup=1
+Language=00000409
+SystemLocale=00000409
+UserLocale=00000409
+InputLocale=0409
+
+[Identification]
+JoinWorkgroup=WORKGROUP
+
+[Networking]
+InstallDefaultComponents=Yes

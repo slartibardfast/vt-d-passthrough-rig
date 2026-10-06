@@ -1,0 +1,44 @@
+;SetupMgrTag
+; ProductKey deliberately absent: setup skips the key page,
+; XP installs unactivated. Activation is not load-bearing for
+; the driver work.
+[Data]
+AutoPartition=1
+MsDosInitiated="0"
+UnattendedInstall="Yes"
+
+[Unattended]
+UnattendMode=FullUnattended
+OemSkipEula=Yes
+OemPreinstall=No
+TargetPath=\WINDOWS
+
+[GuiUnattended]
+AutoLogon=Yes
+AutoLogonCount=1
+OEMSkipRegional=1
+OEMSkipWelcome=1
+TimeZone="(GMT) Coordinated Universal Time"
+
+[UserData]
+FullName="winxp64-r290x"
+OrgName="winxp64-r290x"
+ComputerName=WINXP64R290X
+
+[Display]
+BitsPerPel=32
+Xresolution=1024
+YResolution=768
+
+[RegionalSettings]
+LanguageGroup=1
+Language=00000409
+SystemLocale=00000409
+UserLocale=00000409
+InputLocale=0409
+
+[Identification]
+JoinWorkgroup=WORKGROUP
+
+[Networking]
+InstallDefaultComponents=No

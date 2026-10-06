@@ -1,0 +1,37 @@
+# Guest disks and helper disks. Multi-gigabyte and re-derivable; the hashes that
+# stand in for them are recorded in the host repo's plan/0002 and plan/0003.
+*.raw
+*.img
+rollback/
+work/
+
+# Captured guest frames. Screenshots are evidence for a run, not source.
+*.ppm
+*.png
+
+# Dumped guest memory and firmware images. The ROM dumps are AMD firmware: the
+# hashes recorded in plan/0003 stand in for them and the card re-dumps on demand.
+*.bin
+*.rom
+
+# Serial and monitor logs from a run.
+*.log
+
+# OVMF variable stores. Copied fresh per run; nothing persists between boots.
+*.fd
+
+# Editor and tool backups.
+*.bak
+
+# Build outputs. The CSMWrap image is built from the Where-room component's pinned
+# source in its own toolchain and deployed to the guest's FAT16 partition; the copy
+# that used to sit here was an untracked build that no longer matched any pin.
+*.efi
+
+# Superseded by the fix as committed in the CSMWrap fork at 8381c59. A second copy of
+# the same patch would drift from the commit that actually carries it.
+csmwrap-e820-nvs-gap.patch
+
+# Third-party binaries vendored for a one-off inspection. amdvbflash is the only
+# one, it was used once to read the card's ROM, and it is not part of the rig.
+tools/
