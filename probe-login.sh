@@ -22,7 +22,19 @@ sudo -n fuser -k "$RIG/xp64-gpu.raw" >/dev/null 2>&1 || true
 sleep 1
 rm -f "$RIG/mon.sock"
 
-EXTRA_QEMU="-smp 2" TAG=login "$RIG/probe-freeze.sh" "$SETTLE" 1 >/dev/null 2>&1 &
+# EXTRA_QEMU is honoured so a sweep can vary exactly one thing. The default is the
+# two-processor configuration that boots; override it to test another count.
+# The VM is launched directly rather than through probe-freeze.sh. That script drives
+# the QEMU monitor on its own settle timer, and the monitor takes a single client, so
+# running it in the background while this script logs in had the two of them fight over
+# mon.sock. Whichever lost had its commands dropped, which is why the logon
+# intermittently failed before the guest ever saw a keystroke.
+# TAG must be set even though it only names files: the script runs under `set -u`, and
+# referencing an unset TAG aborts it before QEMU is ever launched.
+TAG=${TAG:-login}
+# shellcheck disable=SC2086
+EXTRA_QEMU=${EXTRA_QEMU:--smp 2} "$RIG/run-gpu-vm.sh" >"$RIG/$TAG-qemu.log" 2>&1 &
+QEMU_PID=$!
 
 for _ in $(seq 1 60); do
   [ -S "$RIG/mon.sock" ] && break
@@ -60,8 +72,11 @@ PY
 
 shot "$RIG/login-0-logon.ppm"
 
-echo "== typing the Administrator password =="
-python3 "$RIG/typepass.py" 2>&1 | tail -3 | sed 's/^/  /'
+echo "== logging in =="
+# logon.py clicks the Administrator tile before typing. Typing alone leaves the
+# keystrokes in an unfocused screen, which looks exactly like a guest that ignored
+# them, and that cost a whole run before it was written.
+python3 "$RIG/logon.py" 2>&1 | tail -4 | sed 's/^/  /'
 
 echo "== waiting for the desktop =="
 sleep 45
