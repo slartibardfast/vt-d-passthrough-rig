@@ -1,5 +1,12 @@
-# CONTROL: CSMWrap with NO GPU passed through. Everything else identical to
-# run-gpu-vm.sh, so the only variable removed is the 290X itself.
+# CONTROL: CSMWrap with NO GPU passed through, differing from run-gpu-vm.sh by
+# exactly the -device vfio-pci line and nothing else.
+#
+# That was not true when this control was first written, and it is the whole point of a
+# control. It also ran at -smp 4 and had no USB tablet, so it varied three things at once,
+# and -smp 4 is now known to deadlock on its own for a reason that has nothing to do with
+# the GPU. A run of that script could not have answered the question it existed to answer,
+# and its header claimed otherwise. Both differences are fixed here so the only variable
+# is the card.
 #!/usr/bin/env bash
 # Boot Windows XP x64 with the R9 290X passed through, through OVMF and CSMWrap.
 #
@@ -37,12 +44,14 @@ exec qemu-system-x86_64 \
   -name xp64-nogpu \
   -machine pc,accel=kvm \
   -cpu host,-x2apic \
-  -smp 4 \
+  -smp 2 \
   -m 4096 \
   -rtc base=localtime \
   -nodefaults \
   -display none \
   -device VGA,id=stdvga,addr=0x2 \
+  -device piix3-usb-uhci,id=usb,addr=0x5 \
+  -device usb-tablet,bus=usb.0 \
   -monitor unix:"$RIG/mon.sock",server,nowait \
   -serial file:"$RIG/csmwrap-serial.log" \
   -drive if=pflash,format=raw,unit=0,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd \
