@@ -36,6 +36,18 @@
 #     registers at the freeze, which is how the deadlock was told apart from a
 #     slow boot.
 #
+#   * A USB tablet is attached, and it is load-bearing for anything measured rather
+#     than merely watched. The machine runs with -nodefaults, so without it the only
+#     pointing device is the i8042's relative PS/2 mouse, and the QEMU monitor's
+#     mouse_move takes absolute coordinates. An absolute move sent to a relative
+#     mouse goes nowhere, so clicking the Administrator tile on the XP logon screen
+#     silently did nothing. A run would then sit at the logon page with an empty
+#     password box, which looks exactly like a kernel refusing a logon and cost
+#     several runs before it was noticed. logon.py now confirms the click against
+#     the framebuffer so this cannot fail silently again. The UHCI controller is
+#     named because -nodefaults suppresses the default one, and SeaBIOS here has
+#     USB_UHCI and USB_MOUSE built in.
+#
 #   * SeaBIOS runs at CONFIG_DEBUG_LEVEL=1 and says nothing after handoff, so the
 #     screen is the only instrument during the legacy phase.
 set -euo pipefail
@@ -58,6 +70,8 @@ exec qemu-system-x86_64 \
   -nodefaults \
   -display none \
   -device VGA,id=stdvga,addr=0x2 \
+  -device piix3-usb-uhci,id=usb,addr=0x5 \
+  -device usb-tablet,bus=usb.0 \
   -monitor unix:"$RIG/mon.sock",server,nowait \
   -serial file:"$RIG/csmwrap-serial.log" \
   -drive if=pflash,format=raw,unit=0,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd \
