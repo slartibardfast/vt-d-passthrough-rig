@@ -1,0 +1,5 @@
+8fac68e1e56c64ad9a2aa0ad464560282e67fa4f4dd51d09a66f4e548eb0f2d6  /home/dconnolly/xp64-corpus/iso/AX2PXVOL_EN.iso
+266f6a813d7d94d5485f4f87dfcbaa32ea1635d1761ffb8ae1e720f2f216db06  rollback/xp64-disk-good.raw
+18ec41f2cceac0913f0f6d2a8a4167e23ec49d7c8b666b172a59ced283911954  xp64-ansfloppy.img
+27c8c8dd11cb6b1496327e374a47231fc26cf6c3f96bbe80a034c3e2444f3f89  winnt.sif
+412586e974db77fb3b88b08a0659aba13249d5d629b6b2c24be4c17b68994454  xp64-ansfloppy.img
