@@ -13,9 +13,13 @@
 #     default; XP's HAL does not want it. No run in this project set it before the runbook.
 #
 #   * The 290X is the only display (operator direction: using it is the point). No stdvga.
-#     x-vga=on makes the vfio device primary so SeaBIOS runs the card's OpROM. Consequence:
-#     screendump is blind from here on; observation is serial, disk writes, network probes,
-#     offline bootlog, and the physical monitor.
+#     x-vga=on is IMPOSSIBLE on this host and is not used: neither GPU holds the legacy VGA
+#     IO ports (both boot_vga=0, /proc/ioports has no 0x3b0-0x3df range), so the kernel's
+#     vfio refuses the VGA region ("failed getting region info for VGA region index 8") and
+#     QEMU rejects the flag. The card is still the sole display: SeaBIOS runs its OpROM from
+#     romfile and the OpROM programs the card over BAR MMIO. If the OpROM's legacy-port writes
+#     turn out to matter, that is a host-firmware question (make the card boot VGA), not a
+#     second-display question.
 #
 #   * A keyboard device. Every earlier run line had -nodefaults with a tablet and no
 #     keyboard, so monitor sendkey had no sink. usb-kbd is present from here on.
@@ -28,6 +32,9 @@
 set -euo pipefail
 
 RIG=/home/dconnolly/xp64-rig
+
+# OVMF variable store: rewritten per run, so nothing persists between boots.
+cp -f /usr/share/edk2/x64/OVMF_VARS.4m.fd "$RIG/OVMF_VARS.fd" 
 ISO=/home/dconnolly/xp64-corpus/iso/AX2PXVOL_EN.iso   # recorded known-good, MEMORY.md L394
 
 [ -f "$ISO" ]                    || { echo "missing stock media: $ISO" >&2; exit 1; }
@@ -49,11 +56,12 @@ exec qemu-system-x86_64 \
   -device usb-tablet,bus=usb.0 \
   -monitor unix:"$RIG/mon.sock",server,nowait \
   -serial file:"$RIG/install-serial.log" \
+  -drive if=pflash,format=raw,unit=0,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd \
+  -drive if=pflash,format=raw,unit=1,file="$RIG/OVMF_VARS.fd" \
   -drive file="$RIG/xp64-scratch.raw",format=raw,if=ide,index=0,media=disk \
   -drive file="$ISO",format=raw,if=ide,index=2,media=cdrom \
   -drive file="$RIG/xp64-ansfloppy.img",format=raw,if=floppy,index=0 \
   -netdev user,id=net0 \
   -device e1000,netdev=net0,bus=pci.0,addr=0x3 \
-  -device vfio-pci,host=02:00.0,id=radeon290x,bus=pci.0,addr=0x4,x-vga=on,romfile="$RIG/290x-vbios.rom" \
-  -boot order=d,menu=off \
+  -device vfio-pci,host=02:00.0,id=radeon290x,bus=pci.0,addr=0x4,romfile="$RIG/290x-vbios.rom" \
   "$@"
