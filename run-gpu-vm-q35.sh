@@ -25,12 +25,15 @@
 #     framebuffer, which it takes from whichever device is VGA class, and with no
 #     emulated VGA present that device is the card.
 #
-#     The card's ROM plays no part in this and could not if it tried: it is two
-#     legacy ATOMBIOS expansion images of 64 KiB each with no UEFI payload at all,
-#     no PE/COFF header, no EFI firmware volume, no MZ or TE image, and no GOP
-#     protocol GUID. The "GOP AMD REV: x.x.x.x.x" string it does carry is an
-#     unstamped ATOMBIOS placeholder in the legacy image, not a driver.
-#
+#     The card's ROM is hybrid: 64 KiB of legacy ATOMBIOS at offset 0 and a
+#     58368-byte EFI image at 0x10000, signature 0x0EF1 at +4, PCIR 1002:67b0. It
+#     does carry a GOP and OVMF does find it. Searching the whole ROM for _FVH /
+#     "PE\0\0" / a GOP protocol GUID reports no GOP on a ROM that has one, because
+#     the EFI half is a PCI-style expansion ROM block rather than an EFI firmware
+#     volume, so those signatures are not there to be found. The legacy OpROM
+#     cannot POST (it spins polling an unclaimed IO port, and dispatching it
+#     triple-faulted the guest), which is why oprom = false keeps it out of
+#     dispatch; rombar=0 is wrong now, since it hides the EFI half too.#
 #     x-vga is never used. It is a legacy-VGA knob (IO ports, the 0xA0000 window,
 #     BIOS-era console), not a GOP mechanism, and it is unavailable here regardless:
 #     neither GPU on this host holds the legacy VGA resources (both boot_vga=0, no

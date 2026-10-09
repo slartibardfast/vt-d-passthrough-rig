@@ -19,11 +19,16 @@ any phase.
 
 The console is the card's own framebuffer. SeaBIOS's CSM installs the `SeaVGABIOS`
 that draws it, and `SeaVGABIOS` takes its framebuffer from whichever device is VGA
-class, which with no emulated VGA present is the card. The card's ROM plays no part and
-cannot supply a GOP: it is two 64 KiB legacy ATOMBIOS images with no PE header, no
-EFI firmware volume, no MZ or TE image, and no GOP protocol GUID. `x-vga` is never
-used; it is a legacy-VGA knob rather than a GOP mechanism, and this host assigns no
-legacy VGA resources to any GPU, so the kernel's vfio refuses the VGA region.
+class, which with no emulated VGA present is the card. The card's ROM does not supply
+the CSM-phase console, which SeaVGABIOS provides directly; the ROM is nonetheless
+hybrid rather than legacy-only (64 KiB of ATOMBIOS at offset 0, a 58368-byte EFI image
+at `0x10000`, signature `0x0EF1` at +4), so it carries a GOP and OVMF finds one. An
+earlier version of this file said it could not, on the strength of a whole-ROM search
+for `_FVH` / `"PE\0\0"` / a GOP GUID: the EFI half is a PCI-style expansion ROM block
+rather than an EFI firmware volume, so those signatures are absent by construction and
+the search reported no GOP on a ROM that has one. `x-vga` is never used; it is a
+legacy-VGA knob rather than a GOP mechanism, and this host assigns no legacy VGA
+resources to any GPU, so the kernel's vfio refuses the VGA region.
 
 The consequence for observation is that `screendump` no longer applies: QEMU captures
 emulated framebuffers only, and there is no longer an emulated one. The channels that
