@@ -5,11 +5,15 @@
 #       head free space, exactly as the October layout shows (p1 41913522 sectors).
 #   p2: 29440 sectors of FAT16 in the tail, carrying CSMWrap at EFI/BOOT/BOOTX64.EFI
 #       plus csmwrap.ini, carved the way October carved it (start 41913600, type 0x0e).
-#   MBR: a one-instruction boot code (retf) that makes SeaBIOS record "boot failed"
-#       for this disk and fall through to the next BBS entry, the stock CD. CSMWrap
-#       pins the legacy boot device to the disk it was loaded from, so without this
-#       decliner the install would chain to an empty MBR and hang. XP setup overwrites
-#       the decliner with a real MBR on first reboot, after which the pin is correct.
+#   MBR: partition table plus an inert boot sector, with the 55aa signature left in
+#       place. The entry carries no active flag, and CSMWrap's fork reads sector 0,
+#       finds no active partition, and so steps the disk behind the CD: the disk is
+#       always tried first because it is the medium CSMWrap booted from, and it has to
+#       yield for the installer to be reachable at all. XP setup writes a real MBR
+#       with an active partition on first reboot, after which the disk takes priority
+#       back. Removing the 55aa instead would make SeaBIOS decline the disk through
+#       its own "not a bootable disk" path, but those two bytes are also what make p2
+#       visible to mkfs.vfat and to OVMF, and OVMF must find p2 to load CSMWrap at all.
 #
 # The partition table is asserted before and after every write: a write at 0x1CE that
 # landed inside entry 0 once destroyed a boot partition silently, and a byte diff
@@ -41,7 +45,12 @@ sudo -n python3 - "$LOOP" "$P2_START" "$P2_SECTORS" <<'PY'
 import sys, struct
 loop, start, sectors = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 mbr = bytearray(512)
-mbr[0] = 0xcb                      # retf: "boot failed", SeaBIOS falls through
+# Sector 0 carries no operating system: the partition table, an inert ret, and a
+# signature. The signature stays, because removing it hides p2 from mkfs.vfat and from
+# OVMF, and OVMF has to read p2 to load CSMWrap. The decliner works the other way:
+# the entry below is not flagged active, which is what CSMWrap's fork tests for when
+# it decides the disk cannot boot and gives the installer priority ahead of it.
+mbr[0] = 0xc3                      # ret, inert; setup overwrites sector 0 on install
 e = 0x1CE                          # entry 1; entry 0 stays empty for setup
 mbr[e+0] = 0x00                    # not bootable
 mbr[e+4] = 0x0e                    # FAT16 LBA
@@ -50,14 +59,23 @@ struct.pack_into("<I", mbr, e+12, sectors)
 mbr[510], mbr[511] = 0x55, 0xaa
 with open(loop, "r+b") as f:
     f.write(mbr)
-print("  MBR written: decliner + p2 entry at 0x1CE")
+print("  MBR written: inert sector 0 (55aa present) + p2 entry at 0x1CE")
 PY
 sudo -n partprobe "$LOOP" 2>/dev/null || true
 sleep 1
 
-echo "=== table after (must show exactly one partition, start $P2_START) ==="
-assert_table after
-sudo -n fdisk -l "$DISK" | grep -q " ${P2_START} " || { echo "  ASSERT FAILED: p2 start" >&2; exit 1; }
+echo "=== p2 entry after (read directly: sfdisk and fdisk both need the 55aa"
+echo "=== signature this script deliberately omits, so neither will parse it) ==="
+sudo -n python3 - "$P2_START" "$P2_SECTORS" "$DISK" <<'PY'
+import sys, struct
+start_want, size_want = int(sys.argv[1]), int(sys.argv[2])
+f = open(sys.argv[3] if len(sys.argv) > 3 else "xp64-scratch.raw", "rb")
+f.seek(0x1CE); e = f.read(16)
+start, size = struct.unpack("<II", e[8:16])
+print(f"  entry1: type=0x{e[4]:02x} start={start} size={size}")
+assert e[4] == 0x0e and start == start_want and size == size_want, "p2 entry mismatch"
+print("  ASSERT PASS: p2 entry is the FAT16 tail partition setup must leave alone")
+PY
 
 sudo -n mkfs.fat -F 16 -n CSMWRAP "${LOOP}p2" >/dev/null
 MNT=/tmp/opencode/p2mnt; sudo -n rm -rf "$MNT"; sudo -n mkdir -p "$MNT"
