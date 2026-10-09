@@ -41,3 +41,8 @@ tools/
 # script argument wrote the card ROM to a file called "-r". .gitignore patterns do not
 # match a name that starts with a dash, so it showed as untracked instead of ignored.
 -r
+
+# probe-run.sh working directories: per-corner target disks, serial logs, gdb
+# dumps and samples. Evidence for a run belongs in MEMORY.md, not here, and the
+# targets are 20 GiB sparse reflinks.
+probe/
