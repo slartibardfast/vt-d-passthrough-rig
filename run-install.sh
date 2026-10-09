@@ -18,11 +18,19 @@
 #     framebuffer, which it takes from whichever device is VGA class, and with no
 #     emulated VGA present that device is the card.
 #
-#     The card's ROM plays no part in this and could not if it tried: it is two
-#     legacy ATOMBIOS expansion images of 64 KiB each with no UEFI payload at all,
-#     no PE/COFF header, no EFI firmware volume, no MZ or TE image, and no GOP
-#     protocol GUID. The "GOP AMD REV: x.x.x.x.x" string it does carry is an
-#     unstamped ATOMBIOS placeholder in the legacy image, not a driver.
+#     The card's ROM is hybrid, not legacy-only: 64 KiB of legacy ATOMBIOS at offset
+#     0 and a 58368-byte EFI image at 0x10000, with signature 0x0EF1 and PCIR
+#     1002:67b0. It does carry a GOP, OVMF does find it, and the CSMWrap splash
+#     does appear on the physical monitor. An earlier version of this file claimed
+#     the ROM had no UEFI payload and that OVMF found no GOP; that was wrong, and
+#     searching the whole ROM for _FVH / "PE\0\0" / a GOP GUID is what produced the
+#     error, since the EFI image is a PCI-style expansion ROM block rather than an
+#     EFI firmware volume. Check the signature at offset +4 of the second image.
+#
+#     The whole 128 KiB is served as romfile. Serving an extracted slice of the EFI
+#     image was tried and the guest never reached the CSM, so the legacy half is
+#     kept in the image and kept out of the dispatch path by oprom = false in
+#     csmwrap-install.ini instead, which is where that decision belongs.
 #
 #     x-vga is never used. It is a legacy-VGA knob (IO ports, the 0xA0000 window,
 #     BIOS-era console), not a GOP mechanism, and it is unavailable here regardless:
@@ -30,11 +38,13 @@
 #     0x3b0-0x3df range in /proc/ioports), so the kernel's vfio refuses the VGA
 #     region and QEMU rejects the flag.
 #
-#     The card's legacy OpROM is kept out of the dispatch path entirely with
-#     rombar=0, because it cannot POST: it spins polling an unclaimed IO port rather
-#     than failing, and dispatching it triple-faulted the guest. The AMD driver
-#     programs the card's BARs itself and never executes that OpROM, so nothing is
-#     lost by hiding it.
+#     The card's legacy OpROM is kept out of the dispatch path by oprom = false,
+#     because it cannot POST: it spins polling an unclaimed IO port rather than
+#     failing, and dispatching it triple-faulted the guest. The AMD driver programs
+#     the card's BARs itself and never executes that OpROM, so nothing is lost.
+#     rombar=0 was the earlier way to do this; it also hid the ROM's EFI half from
+#     OVMF along with the legacy half, so it is gone in favour of serving the full
+#     ROM and refusing to dispatch its Option ROM.
 
 #   * A keyboard device. Every earlier run line had -nodefaults with a tablet and no
 #     keyboard, so monitor sendkey had no sink. usb-kbd is present from here on.
@@ -55,7 +65,7 @@ ISO=/home/dconnolly/xp64-corpus/iso/AX2PXVOL_EN.iso   # recorded known-good, MEM
 [ -f "$ISO" ]                    || { echo "missing stock media: $ISO" >&2; exit 1; }
 [ -f "$RIG/xp64-ansfloppy.img" ] || { echo "missing answer floppy; run build-answer-floppy.sh" >&2; exit 1; }
 [ -f "$RIG/xp64-scratch.raw" ]   || { echo "missing scratch disk; see runbook stage 2" >&2; exit 1; }
-[ -f "$RIG/290x-vbios.rom" ]     || { echo "missing card rom" >&2; exit 1; }
+[ -f "$RIG/290x-vbios.rom" ]     || { echo "missing card ROM" >&2; exit 1; }
 
 exec qemu-system-x86_64 \
   -name xp64-install \
@@ -78,5 +88,6 @@ exec qemu-system-x86_64 \
   -drive file="$RIG/xp64-ansfloppy.img",format=raw,if=floppy,index=0 \
   -netdev user,id=net0 \
   -device e1000,netdev=net0,bus=pci.0,addr=0x3 \
-  -device vfio-pci,host=02:00.0,id=radeon290x,bus=pci.0,addr=0x4,rombar=0 \
+  -device vfio-pci,host=02:00.0,id=radeon290x,bus=pci.0,addr=0x4,\
+romfile="$RIG/290x-vbios.rom" \
   "$@"

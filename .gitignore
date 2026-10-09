@@ -36,3 +36,8 @@ csmwrap-e820-nvs-gap.patch
 # Third-party binaries vendored for a one-off inspection. amdvbflash is the only
 # one, it was used once to read the card's ROM, and it is not part of the rig.
 tools/
+
+# A stray file named "-r" appeared here once: a `sed -r` that took the flag as the
+# script argument wrote the card ROM to a file called "-r". .gitignore patterns do not
+# match a name that starts with a dash, so it showed as untracked instead of ignored.
+-r
