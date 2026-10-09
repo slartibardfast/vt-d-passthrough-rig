@@ -12,15 +12,30 @@
 #   * hpet=off. The published working XP recipe sets it; QEMU's pc machine enables HPET by
 #     default; XP's HAL does not want it. No run in this project set it before the runbook.
 #
-#   * The 290X is the only display (operator direction: using it is the point). No stdvga.
-#     x-vga=on is IMPOSSIBLE on this host and is not used: neither GPU holds the legacy VGA
-#     IO ports (both boot_vga=0, /proc/ioports has no 0x3b0-0x3df range), so the kernel's
-#     vfio refuses the VGA region ("failed getting region info for VGA region index 8") and
-#     QEMU rejects the flag. The card is still the sole display: SeaBIOS runs its OpROM from
-#     romfile and the OpROM programs the card over BAR MMIO. If the OpROM's legacy-port writes
-#     turn out to matter, that is a host-firmware question (make the card boot VGA), not a
-#     second-display question.
+#   * No emulated VGA: the 290X is the guest's only display in every phase. The
+#     console comes from the card's own framebuffer, and SeaBIOS's CSM installs the
+#     SeaVGABIOS that draws it (CONFIG_VGA_COREBOOT=y). SeaVGABIOS needs only a
+#     framebuffer, which it takes from whichever device is VGA class, and with no
+#     emulated VGA present that device is the card.
 #
+#     The card's ROM plays no part in this and could not if it tried: it is two
+#     legacy ATOMBIOS expansion images of 64 KiB each with no UEFI payload at all,
+#     no PE/COFF header, no EFI firmware volume, no MZ or TE image, and no GOP
+#     protocol GUID. The "GOP AMD REV: x.x.x.x.x" string it does carry is an
+#     unstamped ATOMBIOS placeholder in the legacy image, not a driver.
+#
+#     x-vga is never used. It is a legacy-VGA knob (IO ports, the 0xA0000 window,
+#     BIOS-era console), not a GOP mechanism, and it is unavailable here regardless:
+#     neither GPU on this host holds the legacy VGA resources (both boot_vga=0, no
+#     0x3b0-0x3df range in /proc/ioports), so the kernel's vfio refuses the VGA
+#     region and QEMU rejects the flag.
+#
+#     The card's legacy OpROM is kept out of the dispatch path entirely with
+#     rombar=0, because it cannot POST: it spins polling an unclaimed IO port rather
+#     than failing, and dispatching it triple-faulted the guest. The AMD driver
+#     programs the card's BARs itself and never executes that OpROM, so nothing is
+#     lost by hiding it.
+
 #   * A keyboard device. Every earlier run line had -nodefaults with a tablet and no
 #     keyboard, so monitor sendkey had no sink. usb-kbd is present from here on.
 #
@@ -63,5 +78,5 @@ exec qemu-system-x86_64 \
   -drive file="$RIG/xp64-ansfloppy.img",format=raw,if=floppy,index=0 \
   -netdev user,id=net0 \
   -device e1000,netdev=net0,bus=pci.0,addr=0x3 \
-  -device vfio-pci,host=02:00.0,id=radeon290x,bus=pci.0,addr=0x4,romfile="$RIG/290x-vbios.rom" \
+  -device vfio-pci,host=02:00.0,id=radeon290x,bus=pci.0,addr=0x4,rombar=0 \
   "$@"

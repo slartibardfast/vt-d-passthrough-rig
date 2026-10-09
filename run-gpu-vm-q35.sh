@@ -19,7 +19,29 @@
 #     PCIe and the card is a conventional PCI device.
 #   * CSMWrap still lives on the guest's own FAT16 partition. There is no helper disk and
 #     no virtio disk: CSMWrap sets its own boot device to the disk it was loaded from.
-#   * std VGA is kept, and x-vga is still never used.
+#   * No emulated VGA: the 290X is the guest's only display in every phase. The
+#     console comes from the card's own framebuffer, and SeaBIOS's CSM installs the
+#     SeaVGABIOS that draws it (CONFIG_VGA_COREBOOT=y). SeaVGABIOS needs only a
+#     framebuffer, which it takes from whichever device is VGA class, and with no
+#     emulated VGA present that device is the card.
+#
+#     The card's ROM plays no part in this and could not if it tried: it is two
+#     legacy ATOMBIOS expansion images of 64 KiB each with no UEFI payload at all,
+#     no PE/COFF header, no EFI firmware volume, no MZ or TE image, and no GOP
+#     protocol GUID. The "GOP AMD REV: x.x.x.x.x" string it does carry is an
+#     unstamped ATOMBIOS placeholder in the legacy image, not a driver.
+#
+#     x-vga is never used. It is a legacy-VGA knob (IO ports, the 0xA0000 window,
+#     BIOS-era console), not a GOP mechanism, and it is unavailable here regardless:
+#     neither GPU on this host holds the legacy VGA resources (both boot_vga=0, no
+#     0x3b0-0x3df range in /proc/ioports), so the kernel's vfio refuses the VGA
+#     region and QEMU rejects the flag.
+#
+#     The card's legacy OpROM is kept out of the dispatch path entirely with
+#     rombar=0, because it cannot POST: it spins polling an unclaimed IO port rather
+#     than failing, and dispatching it triple-faulted the guest. The AMD driver
+#     programs the card's BARs itself and never executes that OpROM, so nothing is
+#     lost by hiding it.
 #
 # The guest image is the same xp64-gpu.raw the pc path uses. If the disk controller
 # turns out to be the wrong shape for this machine, the answer is to rebuild the guest
@@ -55,6 +77,6 @@ exec qemu-system-x86_64 \
   -netdev user,id=net0 \
   -device e1000,netdev=net0,bus=pcie.0,addr=0x3 \
   -device pcie-pci-bridge,id=br0,bus=pcie.0,addr=0x5 \
-  -device "vfio-pci,host=$GPU,id=radeon290x,bus=br0,addr=0x0,romfile=$RIG/290x-vbios.rom" \
+  -device "vfio-pci,host=$GPU,id=radeon290x,bus=br0,addr=0x0,rombar=0" \
   -boot order=c \
   "$@"

@@ -14,9 +14,21 @@ Where-room component. Findings that a later session needs live in that project's
 
 i440fx with PIIX3 IDE, chosen because the installed XP predates AHCI and q35's IDE is
 an AHCI controller the guest cannot drive. The passed-through card sits on the PCI
-root bus at `00:04.0`. QEMU's own std VGA sits at `00:02.0` and is what CSMWrap
-initialises, which is deliberate: it runs SeaBIOS's `SeaVGABIOS` and `screendump`
-captures it, so the guest framebuffer is observable.
+root bus at `00:04.0` and is the guest's only display: no emulated VGA is attached in
+any phase.
+
+The console is the card's own framebuffer. SeaBIOS's CSM installs the `SeaVGABIOS`
+that draws it, and `SeaVGABIOS` takes its framebuffer from whichever device is VGA
+class, which with no emulated VGA present is the card. The card's ROM plays no part and
+cannot supply a GOP: it is two 64 KiB legacy ATOMBIOS images with no PE header, no
+EFI firmware volume, no MZ or TE image, and no GOP protocol GUID. `x-vga` is never
+used; it is a legacy-VGA knob rather than a GOP mechanism, and this host assigns no
+legacy VGA resources to any GPU, so the kernel's vfio refuses the VGA region.
+
+The consequence for observation is that `screendump` no longer applies: QEMU captures
+emulated framebuffers only, and there is no longer an emulated one. The channels that
+remain are the serial log, the QEMU monitor and debugger over guest RAM, the physical
+monitor, and writes to the guest disk.
 
 CSMWrap is loaded by OVMF from a FAT16 partition on the guest disk itself rather than
 from a separate helper disk, because CSMWrap sets its own boot device to the disk it
@@ -89,7 +101,7 @@ Monitor and input:
   a silently dropped key reads as a hung guest.
 - `pickmenu.py` — chooses an entry from XP's startup-recovery menu by watching for it
   rather than by timed keystrokes. The countdown is too short to hit reliably.
-- `build-answer-floppy.sh`, `winnt.sif`, `winnt-nokey.sif` — the installer's answers.
+- `build-answer-floppy.sh`, `winnt.sif`, `winnt-nokey.sif`, the installer's answers.
 
 ## Known traps
 
