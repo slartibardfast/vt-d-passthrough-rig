@@ -101,6 +101,13 @@ ARGS=(
   -drive file="$RIG/xp64-ansfloppy.img",format=raw,if=floppy,index=0
   -netdev user,id=net0
   -device e1000,netdev=net0,bus=pci.0,addr=0x3
+  # Boot the CD first. QEMU's default order on `pc` is floppy,disk,CD, so stock
+  # SeaBIOS takes the target disk and never reaches the installer - which is what
+  # corner 1 did on its first run ("Booting from Hard Disk...", rip still in the
+  # BIOS). Under CSMWrap the BBS prefers the CD, so this makes SeaBIOS match and
+  # keeps the corners differing on the two axes only. It is a third variable, and
+  # it is recorded here rather than applied silently.
+  -boot order=d
   -device "vfio-pci,host=02:00.0,id=radeon290x,bus=pci.0,addr=0x4,romfile=$RIG/290x-vbios.rom"
   # SeaBIOS has no serial backend of its own; with no CSM in the corner nothing
   # would report anything at all, so every corner gets a debugcon on the same
@@ -182,6 +189,11 @@ if ! kill -0 "$QEMU_PID" 2>/dev/null; then
 fi
 echo "  qemu pid $QEMU_PID"
 
+# Issue the gdbstub BEFORE sampling. Stock SeaBIOS takes much longer to reach the
+# installer than CSMWrap does, so a stub started afterwards can miss the window
+# where there is anything to read.
+python3 "$RIG/qmon.py" "$MON" "gdbserver tcp::1234" 2.0 >/dev/null 2>&1
+
 # Sampling: five short-lived monitor queries via qmon.py, one process each.
 # No backgrounded sampler and no long-lived connection, which is what made the
 # earlier version hang with an empty log and an alive PID.
@@ -246,11 +258,6 @@ json.dump(rounds, open(f"{run}/samples.json", "w"), indent=1)
 print(f"  sampled {len(rounds)} rounds", file=sys.stderr)
 SAMPLEEOF
 
-# Start the gdbstub so the gdb phase can attach and dump guest memory.
-if [ "$USE_GDB" = 1 ]; then
-  python3 "$RIG/qmon.py" "$MON" "gdbserver tcp::1234" 2.0 >/dev/null 2>&1
-fi
-
 # The gdb phase reads guest memory the monitor cannot (xp fails on this guest in long
 # mode), so attach through the stub for the dump work.
 if [ "$USE_GDB" = 1 ]; then
@@ -258,8 +265,9 @@ if [ "$USE_GDB" = 1 ]; then
   timeout 120 gdb -batch \
     -ex 'set pagination off' -ex 'set confirm off' \
     -ex 'target remote :1234' -ex 'set architecture i386:x86-64' \
-    -ex "dump memory $RUN/lowmem.bin 0x0 0x400000" \
-    -ex 'info registers rip rsp rflags cr0 cr2 cr3' \
+    -ex "dump memory $RUN/b8000.bin 0xb8000 0xb8fa0" \
+    -ex 'info registers rip rsp eflags cr0 cr2 cr3 cs ss' \
+    -ex 'info registers' \
     -ex 'detach' > "$RUN/gdb.log" 2>&1
   if grep -qE 'could not connect|Connection (refused|timed out)' "$RUN/gdb.log"; then
     GDB_OK=0
@@ -289,6 +297,12 @@ summarise_samples() {
   python3 - "$1" <<'PYEOF'
 import json,sys
 s=json.load(open(sys.argv[1]))
+if not s:
+    print("  samples      : 0")
+    print("  -> NO SAMPLES. The monitor returned nothing for every query, so")
+    print("     there is no guest-state evidence from this instrument.")
+    print("     The gdbstub reading below is independent of it.")
+    raise SystemExit(0)
 rips=[x.get("rip",0) for x in s]
 lo,hi=min(rips),max(rips)
 print(f"  samples      : {len(s)}")
@@ -316,6 +330,12 @@ print_verdict() {
     echo "               guest. Treat this run as 'no observation', not as a fault."
   else
     summarise_samples "$RUN/samples.json"
+  fi
+  echo "  --- VGA text console at 0xB8000 ---"
+  if [ -s "$RUN/b8000.bin" ]; then
+    python3 "$RIG/vgatext.py" "$RUN/b8000.bin" | sed 's/^/    /'
+  else
+    echo "    (not captured: the gdb phase did not answer)"
   fi
   echo "  disk p1 nonzero bytes: $DISK_NONZERO   (setup's first write; 0 means it never began)"
   echo "  --- serial log ($SERIAL_BYTES bytes) ---"
