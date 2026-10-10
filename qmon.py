@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""One monitor command, one line of output. Used by probe-run.sh.
-
-Kept as a separate file rather than embedded in the shell script: an embedded
-heredoc sampler was launched in the background, hung inside its own connect, and
-produced an empty log while its PID stayed alive, so every run reported "guest
-state not measured" and the harness could not tell an instrument failure from a
-guest fact. A single short-lived process per command has no such state to leak.
+"""One monitor command, one clean line of output. Used by probe-run.sh.
 
 usage: qmon.py <socket> <command> [settle_seconds]
-prints the response with the echoed command and prompt removed, or nothing and
-exits 1 if the monitor did not answer.
+
+`xp <addr>` reads PHYSICAL memory and `x <addr>` reads VIRTUAL memory. That
+difference matters here: gdb's `dump memory` goes through the guest MMU, so every
+"unmapped" address measured with it was a statement about the guest's virtual map,
+not about the machine's RAM. Use this for physical reads.
+
+The monitor echoes the command back one character at a time, so the raw reply is
+"xxpxp xp /xp /1xp ..." then a newline then the real output. The echo must be
+removed without touching the payload: an earlier version matched a subsequence of
+the command and silently deleted the reply, so a working read came back empty.
 """
 import re
 import socket
 import sys
+import time
 
 
 def main() -> int:
@@ -31,48 +34,64 @@ def main() -> int:
         print(f"monitor unreachable: {e}", file=sys.stderr)
         return 1
     try:
-        s.settimeout(3)
-        try:
-            s.recv(65536)  # banner, optional
-        except socket.timeout:
-            pass
-        s.settimeout(20)
-        s.sendall(command.encode() + b"\n")
-        buf = b""
-        deadline = settle
-        while deadline > 0:
+        # Read the banner until its prompt too. Treating it as optional and
+        # giving it a short timeout meant the socket was sometimes still draining
+        # the banner when the command went out, and the reply was then mis-framed
+        # - intermittent empty results that looked like a fact about the guest.
+        banner = b""
+        b_end = time.monotonic() + 5.0
+        while time.monotonic() < b_end:
             try:
                 chunk = s.recv(65536)
             except socket.timeout:
+                continue
+            if not chunk:
                 break
+            banner += chunk
+            if b"(qemu)" in banner[-200:]:
+                break
+        # Read until the prompt "(qemu)" actually arrives. A timeout is NOT the
+        # end of the reply: the monitor writes the echo and the output separately,
+        # and a short inter-write gap made the same address return data on one
+        # call and nothing on the next. Treating a pause as completion produced
+        # an intermittent instrument, which is worse than a broken one because it
+        # looks like a fact about the guest. Only the prompt ends the read; the
+        # ceiling is a backstop against a hung monitor.
+        s.settimeout(20)
+        s.sendall(command.encode() + b"\n")
+        buf = b""
+        deadline = time.monotonic() + max(settle, 8.0)
+        while time.monotonic() < deadline:
+            try:
+                chunk = s.recv(65536)
+            except socket.timeout:
+                continue
             if not chunk:
                 break
             buf += chunk
             if b"(qemu)" in buf[-200:]:
                 break
-            deadline -= 0.5
     except OSError as e:
         print(f"monitor error: {e}", file=sys.stderr)
         return 1
     finally:
         s.close()
 
-    text = re.sub(rb"\x1b\[[0-9;]*[A-Za-z]", b"", buf).decode(errors="replace")
-    # The monitor echoes the command back one character at a time, so the raw
-    # text contains a prefix like "iininfinfo...registers" that interleaves with
-    # the real reply. Drop any leading run that is a subsequence of the command
-    # itself, and keep everything after it.
+    text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", buf.decode(errors="replace"))
     text = text.replace("\r", "")
-    cmd = command.strip()
-    cut = 0
-    for line in text.splitlines(keepends=True):
-        stripped = line.strip()
-        if stripped and all(ch in cmd for ch in stripped) and len(stripped) >= 3:
-            cut += len(line)
+    # The echo and the reply are separated by the FIRST newline, not by a line of
+    # their own: the monitor writes the echoed command with no line break, so a
+    # line-based filter threw the payload away with the echo and every read came
+    # back empty - including `info status`, which made it look like the socket was
+    # dead rather than the parser being wrong.
+    head, sep, tail = text.partition("\n")
+    body = tail if sep else ""
+    out = []
+    for line in body.split("\n"):
+        line = line.strip()
+        if not line or "(qemu)" in line:
             continue
-        break
-    text = text[cut:]
-    out = [l.strip() for l in text.splitlines() if l.strip() and "(qemu)" not in l]
+        out.append(line)
     print("\n".join(out))
     return 0
 
