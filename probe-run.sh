@@ -28,6 +28,21 @@
 #   --keep     leave the VM running at the end (for interactive poking)
 #   --no-gdb   skip the gdbstub phase (used when the guest never reaches long mode,
 #              where there is nothing to read)
+#
+# SMP=<n> overrides the processor count, default 2. It is an environment override
+# rather than an edit so that a corner run stays byte-identical apart from its axis
+# unless the count is deliberately the variable under test. -smp 1 is not available:
+# CSMWrap reserves one AP as its BIOS-call helper core and the firmware does not
+# build without it.
+#
+# ROMPATH=<file> overrides the card ROM served to the guest, default the card's own
+# 128 KiB hybrid ROM. Serving a copy whose first two bytes are zero invalidates the
+# legacy Option ROM header (signature 0x55AA at offset 0), so SeaBIOS's
+# is_valid_rom() rejects it and init_optionrom() never dispatches it. is_pci_vga()
+# needs no ROM at all - class 0x0300, PCI_COMMAND IO+MEMORY, bridge VGA enable - so
+# the card remains the console VGA and SeaVGABIOS still renders into its BAR. The
+# bytes from offset 2 on are identical, so the EFI slice at 0x10000 is untouched and
+# the card's GOP survives for any UEFI phase.
 set -uo pipefail
 
 RIG=/home/dconnolly/xp64-rig
@@ -86,7 +101,7 @@ ARGS=(
   -name "probe-$CORNER"
   -machine pc,accel=kvm,hpet=off
   -cpu host,-x2apic
-  -smp 2
+  -smp "${SMP:-2}"
   -m 4096
   -rtc base=localtime
   -nodefaults
@@ -108,7 +123,7 @@ ARGS=(
   # keeps the corners differing on the two axes only. It is a third variable, and
   # it is recorded here rather than applied silently.
   -boot order=d
-  -device "vfio-pci,host=02:00.0,id=radeon290x,bus=pci.0,addr=0x4,romfile=$RIG/290x-vbios.rom"
+  -device "vfio-pci,host=02:00.0,id=radeon290x,bus=pci.0,addr=0x4,romfile=${ROMPATH:-$RIG/290x-vbios.rom}"
   # SeaBIOS has no serial backend of its own; with no CSM in the corner nothing
   # would report anything at all, so every corner gets a debugcon on the same
   # serial file. Stock SeaBIOS writes its trace there when -debugcon is given.
@@ -125,6 +140,17 @@ ARGS=(
 if [ "$TRACE" = 1 ]; then
   ARGS+=( -d "exec,nochain,int,cpu" -D "$RUN/qemu-trace.log" )
   echo "  trace: exec,nochain,int,cpu -> $RUN/qemu-trace.log"
+fi
+
+# APIC trace events. This is the one execution instrument that works under KVM: `-d`
+# is a TCG-side facility and yields nothing when accel=kvm, but QEMU's own trace
+# events are emitted by the device model regardless of accelerator. apic_register_write
+# shows every LAPIC register write including the ICR, so the guest's IPI destinations
+# and shorthands are visible; apic_deliver_irq shows what was actually delivered.
+# Separate from $TRACE because it is cheap and low-volume, unlike an execution log.
+if [ "${TRACE_APIC:-0}" = 1 ]; then
+  ARGS+=( -trace "enable=apic*,file=$RUN/apic.trace" )
+  echo "  trace: apic events -> $RUN/apic.trace"
 fi
 
 # AXIS 1: firmware
