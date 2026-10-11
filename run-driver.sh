@@ -47,9 +47,9 @@ exec qemu-system-x86_64 \
   -device usb-kbd,bus=usb.0 \
   -device usb-tablet,bus=usb.0 \
   -monitor unix:"$MON",server,nowait \
-  -chardev socket,id=kd,path=/tmp/opencode/kd.sock,server=on,wait=off -serial chardev:kd \
+  -chardev socket,id=kd,path=/tmp/opencode/kd.sock,server=on,wait=off -chardev file,id=seabios,path=/tmp/opencode/seabios.log -device isa-debugcon,iobase=0x402,chardev=seabios -serial chardev:kd \
   -boot order=c \
   -drive file="$WORK",format=raw,if=ide,index=0,media=disk \
   -drive file="$RIG/gpudrv.img",format=raw,if=ide,index=2,media=disk \
   -device vfio-pci,host=02:00.0,id=radeon290x,bus=pci.0,addr=0x4,\
-romfile="$RIG/290x-legacy.rom"
+romfile="$RIG/290x-vbios.rom",x-vga=on
