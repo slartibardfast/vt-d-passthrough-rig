@@ -636,8 +636,8 @@ WINE REGISTRY Version 2
 "dbgeng"="native"
 "dbghelp"="native"
 
-[Software\\Wine\\Fonts] 1791742061
-#time=1dd59ab6852acbe
+[Software\\Wine\\Fonts] 1791756304
+#time=1dd59cc920193e2
 "Codepages"="1252,850"
 "LogPixels"=dword:00000060
 
