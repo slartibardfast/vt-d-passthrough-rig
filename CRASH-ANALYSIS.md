@@ -60,3 +60,57 @@ mapping is not valid under QEMU/vfio.
    supply every driver file; a 64-byte decline (api+STATUS_UNSUCCESSFUL+zeros)
    falls back to the local file. This channel can SUBSTITUTE driver binaries
    at load time without touching the disk.
+
+## Iteration log (continued 2026-10-12)
+
+### Stage-D: the 0x125 fallback branch (RVA 0x8f7f3 je->jmp)
+
+The faulting function gathers clock/capability tables. For feature id 0x125 it
+tests a capability BIT at (adapter+0x148)+0x1c8 (helper RVA 0x8a338 is a bit
+test, not a query) and on bit-unset walks a fallback table at [rdi+0x80]. The
+sibling 0xc2/0x10f group skips safely on failure; the 0x125 group walked a dead
+pointer. Patch makes unset take the success path (count 0 - the state real
+hardware's success path produces). Result: the 0x8F805 crash is GONE.
+
+### Stage-E: the shared dead-table accessor (RVA 0x8f29a)
+
+Second boot faulted at RVA 0xafe7e: `cmp [rax],ebx` after `call 0x9f278` - the
+shared accessor returning [struct+0x80], the SAME dead pointer (identical value
+across boots). Patched the accessor to return a 32-zero-byte .rdata blob:
+both consumers see count 0. Result: NO bugcheck all boot. PowerPlay runs
+(cislands_hwmgr prints, degraded), DAL user-mode loads, and the mode-set
+SETS 1280x1024 - the monitor reports an active signal.
+
+### Display state after Stage-E
+
+Monitor: "Black, Active Signal 1280x1024". CRTC scans, content black: no
+cursor, no desktop. Boot reaches idle (KD knock-breaks answered). Whether the
+session (logon/desktop) is up is unconfirmed - blind Run-dialog typing produced
+no alive.txt on D:.
+
+### KD protocol laws added (all measured)
+
+- Responses to manipulates can be QUEUED target-side and are flushed by the
+  next reset handshake. "Silent" commands are not lost: reconnect and parse.
+- ReadPhysicalMemory (api 0x3139) EXISTS but returns STATUS_INVALID_PARAMETER
+  for MMIO/physical display ranges - virtual reads only.
+- system_reset via the QEMU monitor is a NO-OP on this setup (vfio); reboot =
+  kill and relaunch run-driver.sh. Restart kdc after every reboot (the knocker
+  is one-shot).
+- The boot breakpoint auto-step needs ntbase; classify breaks by exception
+  address (boot break = nt+0x4b350, fatal break = elsewhere).
+- Read route that works: read-VM (api 0x3130) on VIRTUAL addresses. The
+  MMIO/VRAM mappings' VAs are the missing link (find via the driver globals or
+  the adapter extension).
+
+### Next moves (in order)
+
+1. Find the adapter extension base (DriverEntry global store) via the extracted
+   ntoskrnl-free static analysis; read-VM [adapter+BAR mapping fields].
+2. With the MMIO VA: read GRPH_PRIMARY_SURFACE_ADDRESS / CRTC state live, and
+   the framebuffer content through the VRAM window mapping.
+3. PowerPlay "Invalid ASIC family" (cislands_hwmgr.c[6179]): the family check
+   reads a value the VM fills differently; fixing it may complete the display
+   unblank path.
+4. Session liveness: alive.txt via the Run dialog failed - try after each boot;
+   auto-logon registry state unverified.

@@ -45,6 +45,7 @@ API_CONTINUE     = 0x00003136
 API_CONTINUE2    = 0x0000313C     # the exception-resume variant: carries the control set
 API_GET_VERSION  = 0x00003146     # 0x313C is Continue2 - measured law from windbgkd.h
 API_READ_VM      = 0x00003130
+API_READ_PHYS    = 0x00003139
 API_GET_CONTEXT  = 0x00003132
 API_SET_CONTEXT  = 0x00003133
 MANIPULATE_SIZE  = 0x40           # sizeof(DBGKD_MANIPULATE_STATE64) on XP x64
@@ -132,7 +133,14 @@ def handle(kd, ptype, bcount, pid, cksum, data):
         newstate = struct.unpack_from("<I", data, 0)[0] if len(data) >= 4 else -1
         if newstate == STATE_LOAD_SYMBOLS:
             base = struct.unpack_from("<Q", data, 0x28)[0] if len(data) >= 0x30 else 0
-            log("MODULE LOAD pid=%#x base=%#x name=%s" % (pid, base, parse_module_name(data)))
+            name = parse_module_name(data)
+            log("MODULE LOAD pid=%#x base=%#x name=%s" % (pid, base, name))
+            with open(os.path.join(RIG, "modules.txt"), "a") as mf:
+                mf.write("%x %s\n" % (base, name))
+            if not name.lower().endswith("ntoskrnl.exe"):
+                pass
+            elif getattr(kd, "ntbase", None) is None:
+                kd.ntbase = base                     # for break classification
             kd.send_control(T_ACK, pid)
             if os.path.exists(os.path.join(RIG, "hold-tight")):
                 pass                                  # probing the ack path only
@@ -145,18 +153,17 @@ def handle(kd, ptype, bcount, pid, cksum, data):
             log("*** STATE CHANGE %#x pid=%#x - HOLDING (machine frozen) ***" % (newstate, pid))
             for j in range(0, len(data), 16):
                 log("  %04x  %s" % (j, data[j:j+16].hex(" ")))
+            if len(data) > 0x34 and struct.unpack_from("<I", data, 0x20)[0] == 0x80000003:
+                exc_addr = struct.unpack_from("<Q", data, 0x30)[0]
+                ntbase = getattr(kd, "ntbase", None)
+                if (not os.path.exists(os.path.join(RIG, "hold-all"))
+                        and ntbase and 0 <= exc_addr - ntbase < 0x500000):
+                    # the kernel's boot breakpoint (int3 in ntoskrnl): step it
+                    log("    boot breakpoint at nt+%#x - stepping over" % (exc_addr - ntbase))
+                    kd.send_control(T_ACK, pid)
+                    kd.step_over()
+                    return
             kd.send_control(T_ACK, pid)
-            if len(data) > 0x24 and struct.unpack_from("<I", data, 0x20)[0] == 0x80000003:
-                # the kernel's own boot breakpoint (int3): hold, release by hand
-                log("    STATUS_BREAKPOINT - holding for manual release")
-                kd.send_control(T_ACK, pid)
-                while not os.path.exists(HOLD_RELEASE):
-                    poll_cmd(kd)                 # commands work while held
-                    time.sleep(1)
-                os.remove(HOLD_RELEASE)
-                log("    hold released - stepping over")
-                kd.step_over()
-                return
             while not os.path.exists(HOLD_RELEASE):
                 poll_cmd(kd)                     # commands work while held
                 time.sleep(1)
@@ -196,6 +203,16 @@ def handle(kd, ptype, bcount, pid, cksum, data):
                 struct.unpack_from("<H", ctx, 0x3C)[0], struct.unpack_from("<H", ctx, 0x3E)[0],
                 struct.unpack_from("<H", ctx, 0x40)[0], struct.unpack_from("<H", ctx, 0x42)[0],
                 struct.unpack_from("<I", ctx, 0x44)[0]))
+            kd.pending = None
+            kd.send_control(T_ACK, pid)
+            return
+        if pending == "read-dump":
+            got = struct.unpack_from("<I", data, 0x1C)[0] if len(data) >= 0x20 else 0
+            log("READ ret=%#x actual=%#x" % (ret & 0xFFFFFFFF, got))
+            for j in range(0x38, len(data), 16):
+                chunk = data[j:j+16]
+                asc = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
+                log("    %04x  %s  %s" % (j - 0x38, chunk.hex(" "), asc))
             kd.pending = None
             kd.send_control(T_ACK, pid)
             return
@@ -270,10 +287,27 @@ def poll_cmd(kd):
             return
         u = struct.pack("<QII", addr, cnt, 0)   # u.ReadMemory
         kd.send_data(T_MANIPULATE, manip_body(API_READ_VM, u), kd.my_pid)
+        kd.pending = "read-dump"
+    elif line.startswith("pread"):
+        try:
+            _, a, n = line.split()
+            addr, cnt = int(a, 16), int(n, 16)
+        except ValueError:
+            log("  bad pread command")
+            return
+        u = struct.pack("<QII", addr, cnt, 0)   # u.ReadPhysicalMemory
+        kd.send_data(T_MANIPULATE, manip_body(API_READ_PHYS, u), kd.my_pid)
+        kd.pending = "read-dump"
     elif line == "go":
         kd.continue_go()
     elif line == "step":
         kd.step_over()
+    elif line == "knock":
+        try:
+            kd.s.sendall(BREAKIN)
+            log("knock: breakin sent")
+        except OSError as e:
+            log("knock failed: %s" % e)
     elif line == "ctx":
         kd.send_data(T_MANIPULATE, manip_body(API_GET_CONTEXT,
                      struct.pack("<I", 0x10003F)), kd.my_pid)   # CONTEXT_ALL
