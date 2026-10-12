@@ -205,3 +205,23 @@ registry error, then silence); hold-all now freezes every break for manual
 inspection - the frozen specimen at the stall is the next session's starting
 point (GetContext + stack read names the waiter; prime suspect: a display
 interrupt/vblank wait that never completes under vfio).
+
+### The debugger eliminated as the hang cause (2026-10-12 night)
+
+Booted the normal entry with /debug REMOVED from boot.ini entirely. Result:
+identical - active 1280x1024 signal, black content, no cursor. The KD
+interaction (print blocking, queueing, break stalls) is REFUTED as the
+black-screen cause. The state is intrinsic to the ati2mtag display path.
+
+Narrowed mechanism: the CRTC runs the EDID-native timings (the monitor syncs),
+but the scanned surface is black - no cursor sprite, no logon, no desktop. The
+candidate: GRPH_PRIMARY_SURFACE_ADDRESS scans a cleared region while GDI draws
+into a different allocation (or the plane is disabled/blanked with timing
+active). Measuring it needs the driver's BAR mapping VAs - the extension walk
+(DriverObject -> DO -> vp extension done; the AMD miniport extension and its
+MMIO/VRAM mapping fields are the remaining hop) and then read-vm of
+GRPH_PRIMARY_SURFACE_ADDRESS vs the GDI surface.
+
+Also confirmed: safe mode (vga.sys + framebuf) DISPLAYS through the same card -
+the hardware and scanout path work; the black is specific to the ati2mtag
+driver's surface/scanout arrangement in this VM.
