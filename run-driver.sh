@@ -34,7 +34,7 @@ rm -f "$LOG" "$MON"
 
 # The installer CD is deliberately not attached. Boot order c is the first hard disk, and
 # the guest has to come up on its own installed Windows for the driver to bind.
-exec qemu-system-x86_64 \
+qemu-system-x86_64 \
   -name xp64-driver \
   -machine pc,accel=kvm,hpet=off \
   -cpu host,-x2apic \
@@ -52,4 +52,24 @@ exec qemu-system-x86_64 \
   -drive file="$WORK",format=raw,if=ide,index=0,media=disk \
   -drive file="$RIG/gpudrv.img",format=raw,if=ide,index=2,media=disk \
   -device vfio-pci,host=02:00.0,id=radeon290x,bus=pci.0,addr=0x4,\
-romfile="$RIG/290x-vbios.rom",x-vga=on
+romfile="$RIG/290x-vbios.rom",x-vga=on &
+
+# The physical GL.iNet keyboard/mouse (38eb:0001) is passed through to the guest on
+# every launch. The host side never claims it (udev rule 91-glinet-passthrough.rules
+# unbinds usbhid on bind); the attach still retries and tolerates failure so a
+# missing or busy device can never block a boot.
+QEMUPID=$!
+for _ in $(seq 1 40); do
+  [ -S "$MON" ] && break
+  sleep 0.25
+done
+sleep 1
+for _ in 1 2 3; do
+  if python3 "$RIG/qmon.py" "$MON" "device_add usb-host,vendorid=0x38eb,productid=0x0001,id=glinet" 2>/dev/null | grep -qi error; then
+    sleep 2
+  else
+    break
+  fi
+done
+
+wait "$QEMUPID"

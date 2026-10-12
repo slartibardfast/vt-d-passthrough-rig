@@ -131,3 +131,31 @@ GRPH_PRIMARY_SURFACE_ADDRESS (DCE8 ~0x6a04) vs the GDI surface, GRPH_ENABLE,
 CRTC_MASTER_EN, and the framebuffer content through the VRAM window. PowerPlay
 "Invalid ASIC family" (cislands_hwmgr.c[6179]) remains the likely unblank
 blocker; its family read is fed by values the VM fills differently.
+
+### USB input, controller passthrough assessment, and the safe-mode hang (2026-10-12 late)
+
+Safe mode (/safeboot:minimal, dual-entry boot.ini now): 77 loads, the full USB
+HID stack loads (usbport/usbuhci/USBD/usbhub/HIDPARSE/HIDCLASS/hidusb/kbdhid/
+mouhid), win32k + vga.dll + framebuf.dll load (session display driver up), the
+PnP safe-filter prints its last line (AFD.SYS skip) - then the boot SILENTLY
+HANGS before logon. The operator sees the frozen boot-logo/logon-scr-like
+image. Input "not working" is this hang, not USB: the stacks are all up.
+
+Controller-level passthrough assessment (the operator's ask):
+- 00:14.0 Intel xHCI (where the GL.iNet lives): XP x64 has no xHCI driver -
+  passing it is a dead end.
+- 00:1a.0 / 00:1d.0 Intel EHCI: clean IOMMU groups (8 / 14) but zero ports
+  appear wired on this board - nothing to plug into.
+- 0b:00.0 ASMedia ASM1042A: clean group (27), ASMedia shipped XP x64 drivers;
+  VIABLE if the GL.iNet replugs into the card's ports (driver download + stage
+  to the guest still needed).
+All four controllers are alone in their IOMMU groups - individually passable.
+
+kdread/kddump walk achieved this boot: DriverObject global (driver+0x606e40)
+-> DO 0xfffffadfb5172a70 -> vp extension 0xfffffadfb5172bc0 (1024 bytes dumped
+to /tmp/opencode/vpext.bin). The AMD miniport extension and the BAR mapping VAs
+are the next hop. Also measured: poll_cmd exceptions killed the client - now
+guarded; response dumps no longer capped at 0x40.
+
+The hang experiment queued: freeze the next stall via knock, GetContext +
+read-vm the stuck thread's stack - it names the waiter.

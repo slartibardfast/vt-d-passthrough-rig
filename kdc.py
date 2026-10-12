@@ -164,6 +164,7 @@ def handle(kd, ptype, bcount, pid, cksum, data):
                     kd.step_over()
                     return
             kd.send_control(T_ACK, pid)
+            poll_cmd(kd)     # same-call dispatch: this is the window that works
             while not os.path.exists(HOLD_RELEASE):
                 poll_cmd(kd)                     # commands work while held
                 time.sleep(1)
