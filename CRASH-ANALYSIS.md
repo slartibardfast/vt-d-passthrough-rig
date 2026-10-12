@@ -114,3 +114,20 @@ no alive.txt on D:.
    unblank path.
 4. Session liveness: alive.txt via the Run dialog failed - try after each boot;
    auto-logon registry state unverified.
+
+### The extension walk (the read toolchain)
+
+kdread.sh/kddump.sh: read-vm with the reconnect-flush cycle automated. The
+chain measured this boot: DriverObject global at driver+0x606e40 ->
+0xfffffadfb51a1e70; [DriverObject+8] -> DO 0xfffffadfb5172a70;
+[DO+0x40] -> the VideoPort extension 0xfffffadfb5172bc0 ("vPrt" magic;
+DeviceExtension is +0x40 on x64, not +0x38). The AMD miniport extension hangs
+off the vp extension; candidates for its BAR mappings: 0xfffffadfad22c000 /
+0xfffffadfad232000 (page-aligned pointers at vp+0x4b0/0x2d8). MMIO
+identification probe pending (intermittent target deafness: retries work).
+
+The watch order for the display question, once the MMIO VA is found:
+GRPH_PRIMARY_SURFACE_ADDRESS (DCE8 ~0x6a04) vs the GDI surface, GRPH_ENABLE,
+CRTC_MASTER_EN, and the framebuffer content through the VRAM window. PowerPlay
+"Invalid ASIC family" (cislands_hwmgr.c[6179]) remains the likely unblank
+blocker; its family read is fed by values the VM fills differently.

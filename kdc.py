@@ -175,9 +175,13 @@ def handle(kd, ptype, bcount, pid, cksum, data):
         ret = struct.unpack_from("<i", data, 8)[0] if len(data) >= 12 else 0
         log("RX manipulate api=%#x ret=%#x len=%d" % (api, ret & 0xFFFFFFFF, len(data)))
         pending = getattr(kd, "pending", None)
-        if api == API_GET_VERSION and pending != "step-patch":
-            for j in range(0, min(len(data), 0x40), 16):
-                log("    %04x  %s" % (j, data[j:j+16].hex(" ")))
+        if pending in ("step-patch", "step-go", "ctx-dump", "read-dump"):
+            pass
+        elif len(data) > 56:
+            for j in range(0, len(data), 16):
+                chunk = data[j:j+16]
+                asc = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
+                log("    %04x  %s  %s" % (j, chunk.hex(" "), asc))
         if pending == "step-patch" and len(data) > 56 + 0xF8:
             ctx = bytearray(data[56:])
             rip = struct.unpack_from("<Q", ctx, 0xF8)[0]
@@ -264,7 +268,7 @@ def manip_body(api, u_bytes=b""):
     return body
 
 def poll_cmd(kd):
-    # one-shot command file: "version" | "read <hexaddr> <hexlen>" | "go"
+    # one-shot command file: "version" | "read <hexaddr> <hexlen>" | "go" ...
     path = os.path.join(RIG, "cmd")
     try:
         with open(path) as f:
@@ -273,6 +277,12 @@ def poll_cmd(kd):
     except OSError:
         return
     log("CMD %r" % line)
+    try:
+        _dispatch_cmd(kd, line)
+    except Exception as e:
+        log("  cmd error: %r" % (e,))
+
+def _dispatch_cmd(kd, line):
     if line.startswith("version"):
         parts = line.split()
         pid = int(parts[1], 16) if len(parts) > 1 else None
