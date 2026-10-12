@@ -159,3 +159,19 @@ guarded; response dumps no longer capped at 0x40.
 
 The hang experiment queued: freeze the next stall via knock, GetContext +
 read-vm the stuck thread's stack - it names the waiter.
+
+### Operator confirmed: all wired ports are USB3 (2026-10-12)
+
+Both wired controllers are xHCI (Intel 00:14.0 + ASMedia 0b:00.0); the two
+EHCI controllers have no physical ports. Controller passthrough for XP x64 is
+therefore only the ASMedia card + its vendor XP driver + a replug into the
+card's ports. Deferred as a fallback.
+
+Priority finding: the input failure is the pre-logon hang, not USB - the full
+HID stack loads and the devices enumerate in safe mode; the boot then hangs
+after win32k/framebuf and before logon, identically in safe and normal modes.
+Next experiment: reproduce the safe-mode hang, freeze at the stall with a
+knock-break, GetContext + read-vm the stuck thread's stack - it names the
+waiter. Working recipe: knock -> break -> ACK -> (hold-all absent: auto-step
+only for nt-range addresses; hold-all makes every break hold) -> commands in
+the same-call window -> reconnect to flush queued responses.
