@@ -254,3 +254,39 @@ died with the hang.
 
 The machine state left: safe mode, the notice dialog up, the AMD driver
 disabled in the registry, the eyes live, input one-shot per CDP connection.
+
+### The safe-mode splash stall and the KVM-side research (2026-10-13)
+
+The safe boot (ati2mtag disabled offline, Start=4 verified) reached the same
+notice dialog, then cycled the XP splash logo for over an hour - the desktop
+never arrived. The AMD driver is therefore CLEARED as the safe-mode splash
+blocker. The "screensaver" the operator reported is this sliding splash: safe
+mode has never reached a desktop in any observed boot.
+
+KVM-side research (the operator's hypothesis, confirmed as a real issue class):
+the GL.iNet forum and docs document Comet RM1 input-forwarding failures
+("Mouse and keyboard don't work after upgrade", "Comet KVM: USB Input Fails
+Post-Login + Phantom Display Issue in Windows"), the Relative-mouse-mode fix,
+the Virtual-Media disable fix (some targets disable all USB input when the
+KVM's virtual storage device appears - matching "Windows did not manage to
+claim USB devices"), the device-identity change, and the firmware-upgrade path.
+The docs' Display Issues section covers "only displays the desktop wallpaper"
+(Extend-display mode) - and the forum thread reports a Windows PHANTOM DISPLAY
+on this exact device class: Windows renders to a display head the KVM does not
+capture. The phantom-head theory is now the leading candidate for the
+normal-mode black screen: the ati2mtag driver enumerates several outputs, the
+desktop may extend onto a head the GLKVM never sees, while the visible head
+scans timing only.
+
+Also measured: QEMU sendkey does not reach the Windows session (the i8042 path
+is dead in-Windows; the BDA proof only covers the BIOS era). All in-Windows
+input goes through the GLKVM session via CDP-injected events.
+
+The GLKVM input law: CDP-injected events forward once per page load, then the
+forwarding gates; a persistent connection with a per-event enable sequence is
+the pending fix (cdp.py is single-shot per invocation today).
+
+State left: the safe boot frozen at the splash, the AMD service disabled
+(Start=4), boot.ini dual-entry with BOTH entries currently safeboot (the next
+session must restore entry 1 to the normal /debug configuration before any
+normal-mode experiment). The GLKVM eyes and cdp.py are working instruments.
