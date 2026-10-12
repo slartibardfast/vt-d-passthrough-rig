@@ -54,10 +54,13 @@ qemu-system-x86_64 \
   -device vfio-pci,host=02:00.0,id=radeon290x,bus=pci.0,addr=0x4,\
 romfile="$RIG/290x-vbios.rom",x-vga=on &
 
-# The physical GL.iNet keyboard/mouse (38eb:0001) is passed through to the guest on
-# every launch. The host side never claims it (udev rule 91-glinet-passthrough.rules
-# unbinds usbhid on bind); the attach still retries and tolerates failure so a
-# missing or busy device can never block a boot.
+# The GL.iNet keyboard/mouse (38eb:0001) attaches through the monitor ~1.5s after
+# launch - AFTER SeaBIOS's USB scan but BEFORE Windows boots, so Windows hot-plug
+# claims it. Measured law: putting this device on the command line (present at
+# SeaBIOS init) deadlocks the BIOS keyboard services - ntldr's menu freezes at its
+# first key check and the boot never proceeds. Late attach avoids the firmware
+# phase entirely; the menu itself is driven by QEMU sendkey (works - the BDA shows
+# arrows enqueued and consumed).
 QEMUPID=$!
 for _ in $(seq 1 40); do
   [ -S "$MON" ] && break

@@ -175,3 +175,33 @@ knock-break, GetContext + read-vm the stuck thread's stack - it names the
 waiter. Working recipe: knock -> break -> ACK -> (hold-all absent: auto-step
 only for nt-range addresses; hold-all makes every break hold) -> commands in
 the same-call window -> reconnect to flush queued responses.
+
+### The firmware keyboard: works, and the menu hang root-caused (2026-10-12 late)
+
+The boot.ini menu (dual-entry, 30s) is the keyboard test bench - visible on the
+physical monitor. Result: SeaBIOS's keyboard path WORKS. Proof: after L sent
+six down-arrows via sendkey, the BDA keyboard buffer showed head=tail=0x2a -
+the walk from 0x1e is exactly six enqueued-and-consumed keystrokes, with the
+last residue word 0x50e0 = an E0-prefixed down-arrow scancode. The operator
+read the highlight as stuck because only two entries exist: the first arrow
+moved it, the rest clamped.
+
+But with the GL.iNet moved to the QEMU COMMAND LINE (present at SeaBIOS init),
+the menu FROZE - countdown never expired, ntldr spinning in 16-bit code at
+0x20000:0x3e1, the BDA intact, the tick advancing. Detaching the device at
+runtime did not unblock (a transfer already submitted to the emulated UHCI for
+the removed device stays stuck). Reverting to the monitor-based late attach
+(+1.5s - after SeaBIOS's USB scan) unfroze the menu on the next boot: 170
+loads, clean boot.
+
+LAW: the GL.iNet must attach AFTER SeaBIOS's USB scan. At the BIOS phase the
+physical keyboard is dead by design (it would hang the menu); QEMU sendkey
+drives the menu. From Windows on, the GL.iNet hot-plugs and the HID stack
+claims it.
+
+Also measured this boot: /safeboot edit must not use a $ anchor (CRLF lines);
+the boot stall reproduces every boot at the same era (last print = the DAL
+registry error, then silence); hold-all now freezes every break for manual
+inspection - the frozen specimen at the stall is the next session's starting
+point (GetContext + stack read names the waiter; prime suspect: a display
+interrupt/vblank wait that never completes under vfio).
