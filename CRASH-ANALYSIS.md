@@ -225,3 +225,32 @@ GRPH_PRIMARY_SURFACE_ADDRESS vs the GDI surface.
 Also confirmed: safe mode (vga.sys + framebuf) DISPLAYS through the same card -
 the hardware and scanout path work; the black is specific to the ati2mtag
 driver's surface/scanout arrangement in this VM.
+
+### The GLKVM eyes: the display instrument (2026-10-12 night)
+
+The chromium CDP driver (cdp.py) logs into the GLKVM web UI and opens the KVM
+feed. First catch: the SAFE-MODE DESKTOP live through the 290X - "Safe Mode"
+corners, Build 3790 SP1, the safe-mode notice dialog with Yes/No, streaming
+640x480 H.264 60fps. The display pipeline under Windows is CONFIRMED visually.
+
+Input findings: QEMU sendkey (PS2/i8042) does not reach the Windows session.
+The CDP events forward through the GLKVM session into the guest, but the
+forwarding GATES after the first batch (the local cursor sprite tracked the
+first sweep only). The enter key through the CDP path DID dismiss the safe-mode
+notice once (the splash followed - proof of input), then the gating returned.
+Fix needed: a persistent CDP connection with the focus/enable sequence
+(mouseMoved over the video + the container focus) re-issued per event, or the
+GLKVM UI's own input toggles driven. Until then the input is one-shot per
+connection.
+
+Also measured: the safe boot loads ati2mtag.sys from D:\drv even in safe mode
+(the service is system-start pointing at D:\drv) - now disabled offline
+(hivexregedit, ControlSet001\Services\ati2mtag Start=4, verified by read-back).
+The safe boot with the driver disabled reaches the same notice dialog - the
+AMD driver is not the blocker for reaching the dialog; whether the desktop
+loads past it without the driver is the next test. The safe boot's NTBTLOG
+ends at the ipnat.sys skip (srv.sys loaded just before) - the unflushed tail
+died with the hang.
+
+The machine state left: safe mode, the notice dialog up, the AMD driver
+disabled in the registry, the eyes live, input one-shot per CDP connection.
