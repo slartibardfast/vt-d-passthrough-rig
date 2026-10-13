@@ -290,3 +290,18 @@ State left: the safe boot frozen at the splash, the AMD service disabled
 (Start=4), boot.ini dual-entry with BOTH entries currently safeboot (the next
 session must restore entry 1 to the normal /debug configuration before any
 normal-mode experiment). The GLKVM eyes and cdp.py are working instruments.
+
+### The stall loop identified in the kernel binary (2026-10-13)
+
+The frozen boot's RIP (nt+0x7192e, measured via the QEMU monitor during the
+stall) decodes in the extracted ntoskrnl.exe (ImageBase 0x400000, .text at
+VMA 0x401000) as the kernel IDLE LOOP: rbx = gs:0x20 (the PRCB), CR8 raised,
+then the poll sequence `pause / sti / nop / cli` reading the PRCB pending-work
+fields (+0x1f18, +0x1f60, +0xd88) and dispatching to 0x455470 only when they
+are set. The registers sampled in the stall match this loop exactly.
+
+Conclusion: the CPU is truly idle - no pending DPCs, no timers, no deferred
+work. The pre-logon hang is a thread blocked on something that is never
+signaled (an event/semaphore wait), invisible to the idle loop. Naming it
+requires the thread-list walk (the ntoskrnl offsets task) or the guest's own
+logs once input works.
