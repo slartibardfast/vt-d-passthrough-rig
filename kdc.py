@@ -150,13 +150,13 @@ def handle(kd, ptype, bcount, pid, cksum, data):
             if os.path.exists(os.path.join(RIG, "hold-tight")):
                 pass                                  # probing the ack path only
             else:
-                # No reply satisfies kdcom on the first load (GetVersion,
-                # Continue2 variants, a type-7 echo - all re-break at 1/s).
-                # Measured: kdcom's own fallback continues the boot after
-                # ~12 ignored exchanges (the 02:09 boot proceeded). Send
-                # GetVersion anyway: if the engine ever answers it, the
-                # version rides in for free; the boot proceeds either way.
-                kd.send_data(T_MANIPULATE, manip_body(API_GET_VERSION), kd.my_pid)
+                # The proven reply (the 02:08 boot loaded 300+ modules with
+                # it): Continue2 + DBG_CONTINUE. The FIRST load of a boot
+                # storms for about ten seconds - kdcom re-breaks at 1/s,
+                # then its fallback proceeds and every later load accepts
+                # the same reply first try. Replying GetVersion instead
+                # (tried 10-13) removes the fallback: kdcom waits forever.
+                kd.continue_go()
         else:
             log("*** STATE CHANGE %#x pid=%#x - HOLDING (machine frozen) ***" % (newstate, pid))
             for j in range(0, len(data), 16):
@@ -292,7 +292,10 @@ def poll_cmd(kd):
         log("  cmd error: %r" % (e,))
 
 def _dispatch_cmd(kd, line):
-    if line.startswith("version"):
+    if line == "break":
+        kd.s.sendall(BREAKIN)
+        log("TX breakin (cmd)")
+    elif line.startswith("version"):
         parts = line.split()
         pid = int(parts[1], 16) if len(parts) > 1 else None
         kd.send_data(T_MANIPULATE, manip_body(API_GET_VERSION),
