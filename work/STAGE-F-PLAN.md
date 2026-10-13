@@ -41,3 +41,39 @@ become live instrumentation on the next KD-connected boot.
    then load ati2dvag? Does the desktop render?
 3. If PP still fails elsewhere: the assert-break stacks name the next
    site; patch and repeat.
+
+## The operator's correction (2026-10-14): firmware, not guards
+
+Agreed and measured: a widened guard is not acceptable. The [0x14,0x28)
+bucket serves ONE blob table (va 0x353bb0: descriptor 0x34bf50/0x24,
+payload 0x34c070/0x1ecf = 7887 bytes) - CI-format MC ucode. Forcing
+Hawaii through it uploads Sea Islands microcode to a Hawaii SMC.
+
+New facts measured since:
+
+- The adapter-level device table KNOWS Hawaii: entries {ptr1, 0, ptr2,
+  0, family=0x78, did=0x67b0/0x67b1, flags, val} at file 0x1f13c0/
+  0x1f13e0 with per-device config pointers. Family 0x78 has NO hwmgr
+  route (BTC: pre-SI; SIslands: SI ranges; CIslands: [0x14,0x28)) - the
+  driver lacks a Hawaii PP path, not just a narrow guard.
+- Only three UploadMCFirmware task functions exist in the binary.
+- The host's /lib/firmware/radeon has the Hawaii reference set
+  (HAWAII_mc.bin 31732B, HAWAII_mc2.bin, HAWAII_smc.bin 130540B,
+  decompressed in /tmp/opencode). The driver's CI blob shares only a
+  generic register-address prefix with them; the payloads differ and
+  the radeon payloads do not appear in the driver. The splice therefore
+  needs the uploader's format decoded first: FUN_0010f63c defines what
+  the 7887-byte blob must look like.
+
+## The decision framework
+
+1. Falsification first (cheap): the KD-connected boot makes every PP
+   assert INT3 with a live stack; the thread walk shows what waits. If
+   the display block is NOT on the PP path, no firmware surgery at all.
+2. If PP is convicted: decode FUN_0010f63c's blob format via REA and
+   splice HAWAII_mc(+smc) from the local linux-firmware set into a
+   Stage-F build - valid Hawaii microcode in the driver's own format.
+3. The pivot that dominates if available: a mainstream Catalyst XP x64
+   package with native Hawaii support retires the whole patch lineage
+   (the Stage-A..E bugchecks were this build's Hawaii mismatch). An
+   operator decision - it changes the driver package.
