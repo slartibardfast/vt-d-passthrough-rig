@@ -457,3 +457,40 @@ Display facts banked this session:
   hold-release absent - the state is preserved), the daemon polling, the
   registers parked at nt+0xcd053. Do not reboot casually: the frozen
   session is the walk's starting point.
+
+### The KD engine decoded from the target's own code (2026-10-14, night 2)
+
+REA (Ghidra) on the LOCAL ntoskrnl.exe + kdcom.dll - the wire laws are no
+longer inferred, they are read:
+
+- **The manipulate dispatcher**: nt PAGEKD FUN_007ab520 (va 0x7ab520) -
+  the complete api switch (0x3130..0x315c). The read case (0x3130):
+  the cap is 0xf68 bytes/request (not 16 - the 16-byte success was a
+  different failure); the copy is FUN_00402ed0 (MmDbgCopyMemory-class,
+  flags 4); any copy failure => status 0xc0000001 with the partial
+  count. The wait loop re-sends the state change whenever the received
+  packet type != 2 (the storm mechanics, in the engine itself).
+- **kdcom KdReceivePacket - THE ID LAW**: kdcom holds expected_id
+  (DAT, init 0x80800000, restored to it by any RESET control). A data
+  packet is accepted ONLY if its id EQUALS expected_id; acceptance
+  flips it (^1) and ACKs with the accepted id. A wrong id gets a
+  RESEND control (type 5). Checksum = header+data sums vs the packet
+  field; a checksum failure returns SILENTLY (no ack, no nak) - the
+  exact silent-drop we chased for a day.
+- **The daemon now implements the law** (kd_expected): data packets
+  always carry kd_expected; the flip happens ONLY on an ack matching
+  the sent id; RESEND retransmits the same packet; RESET restores the
+  base. The old flip-on-send diverged from the engine after every
+  dropped packet - the root of all parity flakiness.
+- **The remaining blocker**: mid-break, kdcom silently drops even
+  well-formed, correctly-id packets - no ack, no nak, no re-break.
+  The suspect is kdcom's byte-read function FUN_7ff6a181cd0 (its
+  timeout/polling state after a break). The one session where reads
+  worked (12:04/22:51) had hours-old engine state; every fresh break
+  since refuses. Decompile FUN_7ff6a181cd0/FUN_7ff6a181d00 next
+  session - it is the last box between us and the thread walk.
+- The frozen boot was sacrificed for the clean-boot experiment; the
+  current boot: Windows up (168 modules flowed clean after the
+  14-retry storm self-healed - the pure Continue2 flow CONFIRMED),
+  the black 1280x1024 reproduced, broken and held, reads pending the
+  kdcom byte-read decode.

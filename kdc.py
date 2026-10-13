@@ -62,21 +62,30 @@ class Kd:
     def __init__(self, sock):
         self.s = sock
         self.my_pid = INITIAL_PID
+        self.kd_expected = 0x80800000   # kdcom's expected-debugger-id (the ID LAW)
         self.last_tx = None
+        self.last_sent_id = None
 
     def send_control(self, ptype, pid):
         hdr = struct.pack("<IHHII", CTRL_LEADER, ptype, 0, pid, 0)
         self.s.sendall(hdr + TRAILER)
         log("TX control type=%d pid=%#x" % (ptype, pid))
 
-    def send_data(self, ptype, data, pid):
+    def send_data(self, ptype, data, pid=None):
+        # THE ID LAW (kdcom KdReceivePacket, decoded 2026-10-14): the engine
+        # holds expected_id (init 0x80800000, reset to it on RESET), accepts
+        # a data packet ONLY when its id EQUALS expected_id, flips it ONLY on
+        # acceptance, and NAKs (RESEND type 5) anything else. So: send with
+        # kd_expected; never flip on send - the ack handler flips on
+        # acceptance.
+        pid = self.kd_expected
         hdr = struct.pack("<IHHII", DATA_LEADER, ptype, len(data), pid,
                           (sum(data) & 0xFFFF) if data else 0)
         self.s.sendall(hdr + data + TRAILER)
         self.last_tx = (ptype, data, pid)
+        self.last_sent_id = pid
         log("TX data type=%d len=%d pid=%#x %s" %
             (ptype, len(data), pid, data[:24].hex(" ")))
-        self.my_pid = (pid & ~1) | ((pid & 1) ^ 1)   # flip parity, keep the base
 
     def readn(self, n):
         buf = b""
@@ -161,7 +170,6 @@ def handle(kd, ptype, bcount, pid, cksum, data):
                 # its id, so the reply repeats it too; a fresh packet
                 # alternates, and then the flip is right. The 02:09
                 # boot's accepted reply had the target's own id.
-                kd.my_pid = pid
                 kd.continue_go()
         else:
             log("*** STATE CHANGE %#x pid=%#x - HOLDING (machine frozen) ***" % (newstate, pid))
@@ -249,6 +257,8 @@ def handle(kd, ptype, bcount, pid, cksum, data):
         kd.send_control(T_ACK, pid)
     elif ptype == T_ACK:
         log("RX ack pid=%#x" % pid)
+        if pid == getattr(kd, 'last_sent_id', None):
+            kd.kd_expected ^= 1      # accepted: the engine flips, so do we
     elif ptype == T_RESEND:
         poll_cmd(kd)                          # commands must run even mid-storm
         log("RX resend pid=%#x - retransmitting" % pid)
@@ -257,7 +267,9 @@ def handle(kd, ptype, bcount, pid, cksum, data):
             kd.send_data(p, d, orig_pid)      # same pid: a resend is not a new packet
     elif ptype == T_RESET:
         log("RX reset - restarting ids")
+        kd.kd_expected = 0x80800000   # kdcom restarts BOTH ids to the base
         kd.my_pid = POST_RESET_PID
+        kd.kd_expected = 0x80800000
         kd.send_control(T_ACK, pid)
     elif ptype == 11:  # FILE_IO - the .kdfiles mechanism: the kernel offers a file open
         api = struct.unpack_from("<I", data, 0)[0] if len(data) >= 4 else 0
