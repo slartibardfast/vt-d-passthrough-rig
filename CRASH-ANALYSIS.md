@@ -358,3 +358,53 @@ With ati2mtag Start=1 and the GLKVM usbfs EPERM fixed (MODE=0666):
 - KD lesson: killing the kdc daemon mid-connection deafens the target's KD
   engine (the reset/breakin churn wedges it). Restart the daemon without
   touching send-reset unless a fresh boot is planned.
+
+### The phantom-head session: the registration audit and the ati2dvag theory (2026-10-13, night)
+
+Offline hive forensics (hivex) settled the display-registration question:
+
+- The Enum binding is CORRECT: PCI\\VEN_1002&DEV_67B0 Driver =
+  {4D36E968...}\\0001, the ATI driver key, which carries
+  InstalledDisplayDrivers=ati2dvag (MULTI_SZ), VgaCompatible=0,
+  MultiFunctionSupported=1 and the settings.reg DAL tuning. The earlier
+  "the ATI adapter key is missing" reading was about the LEGACY
+  Control\\Video\\{guid} keys (only vga/VgaSave/mnmd/rdpdd exist there) -
+  those are NT4-compat keys, not required by XP's win32k, which reads the
+  DRIVER key (Class\\{4D36E968}\\000N). The install is registered correctly.
+- Revived belief, now measured three times: input (sendkey through the
+  emulated usb-kbd) works on vgasave-era boots and executes NOTHING on
+  driver-era boots (the Run-dialog dance leaves no file and no prefetch).
+  The GLKVM usbfs fix is orthogonal and confirmed working (usbccgp).
+- THE PRIME THEORY: the session graphics init hangs in ati2dvag.dll at the
+  desktop switch, BEFORE userinit launches. This one hang explains: the black
+  screen (the session desktop never renders; the 1280x1024 the feed locks is
+  the mode the stack set before/while hanging), the dead input (queued to a
+  desktop with no shell), the absent userinit/explorer (their prefetch went
+  stale on 10-11 while the 528 logon events still fire - winlogon completes
+  the authentication, then waits on the display handoff), and the idle CPU
+  (everyone waits). Prediction: the thread walk at a driver-era stall finds
+  the winlogon/session thread blocked inside the ati2dvag attach path.
+
+Instrument state banked for the next session:
+
+- The KD daemon is connected to the CURRENT driver-era hung boot (the
+  09:36:04 break state change with the CPU0 context is in kdc-live.log; the
+  target resumed via the daemon's ACK+Continue2). Later knockings go
+  unanswered - the KD goes half-deaf after the first break on this boot; a
+  fresh boot restores the full handshake. The thread walk starts here.
+- ServicesPipeTimeout=300000 is staged in the SYSTEM hive (the SCM event
+  7009s confirm the value reads). The P1 auto-start service is staged with
+  ImagePath C:\\probe\\probe.exe (probe.exe = the GDI screen capture +
+  registry dump, service-safe WinSta switch, StartServiceCtrlDispatcher
+  skeleton) - but the service NEVER executes its code (7009 every boot, no
+  prefetch entry, no log on d: or c:): the SCM creates the process and it
+  never connects nor writes. Child processes of the boot-time service cmd
+  (tasklist, driverquery) also hang; reg query runs but writes empty files.
+  Do NOT iterate further on this path - it consumed four boot cycles. The
+  same cap.exe run through the RUN DIALOG on a vgasave-era (working input)
+  boot is the cheap way to the screen capture.
+- mingw-w64-gcc is installed on the host (cap.exe and probe.exe build with
+  x86_64-w64-mingw32-gcc, PE32+ for 5.02, both proven to load: cap.exe ran
+  on the guest per the prefetch).
+- The D: channel files only reach the rig reliably when the writing process
+  closes them; a boot-time service's single-unclosed file reads stale.
