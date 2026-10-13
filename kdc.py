@@ -189,7 +189,19 @@ def handle(kd, ptype, bcount, pid, cksum, data):
             poll_cmd(kd)     # same-call dispatch: this is the window that works
             while not os.path.exists(HOLD_RELEASE):
                 poll_cmd(kd)                     # commands work while held
-                time.sleep(1)
+                # THE FIX (the tap proved it): read replies were arriving and
+                # queueing in the socket forever - the main read_packet loop is
+                # blocked in this very hold. Drain and dispatch them here.
+                try:
+                    pkt = kd.read_packet()
+                    leader, ptype, bcount, pid, cksum, data = pkt
+                    if ptype == T_STATE_CHANGE64:
+                        log("hold: state-change re-send - ignored (machine held)")
+                    else:
+                        handle(kd, ptype, bcount, pid, cksum, data)
+                except socket.timeout:
+                    pass
+                time.sleep(0.2)
             log("hold released - continuing")
             os.remove(HOLD_RELEASE)
             kd.continue_go()

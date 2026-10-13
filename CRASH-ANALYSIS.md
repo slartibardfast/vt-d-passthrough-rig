@@ -494,3 +494,41 @@ longer inferred, they are read:
   14-retry storm self-healed - the pure Continue2 flow CONFIRMED),
   the black 1280x1024 reproduced, broken and held, reads pending the
   kdcom byte-read decode.
+
+### THE WALK WORKS - the session-verdict rewrite (2026-10-14, night 3)
+
+The end-to-end tooling is DONE and proven on real hardware:
+
+- The root cause of "reads silently fail" was NEVER kdcom refusing: the
+  daemon's hold loop never READ THE SOCKET. Replies queued in the socket
+  backlog for hours (a raw byte-tap between the daemon and QEMU proved
+  it - the read replies sat there, complete and correct). The hold loop
+  now drains and dispatches them; the "1B escapes" in the first tap
+  analysis were the tap's own chunk-length field misread as bytes - the
+  wire is clean, unescaped frames.
+- The alternation law + the acceptance-driven kd_expected + the 16-byte
+  read cap (MmDbgCopyMemory refuses more) + the hold-loop drain = the
+  working read protocol. PsInitialSystemProcess reads reliably; the
+  EPROCESS walk runs at ~1.8s/chunk.
+- THE WALK RESULTS (the 23:48 clean boot, broken and held):
+  ActiveProcessLinks at EPROCESS+0xa8, ImageFileName at +0x268. The
+  full process list: System, smss, csrss, WINLOGON, services, lsass,
+  the svchost fleet, spoolsv - THE SESSION IS FULLY ALIVE on driver
+  boots. The earlier "session never starts" theory is DEAD: winlogon
+  runs, services run, everything runs.
+- So the black screen is purely the DISPLAY PATH: ati2dvag.dll never
+  loads (zero module records; vga.dll+framebuf+TSDDD instead = VGA Save
+  is the active display), while the files exist in System32 (ati2dvag
+  342016 bytes, the whole ATI stack present) and the registration is
+  correct. The 1280x1024 mode on the wire proves the miniport RAN and
+  set a mode; the display-DLL attach did not happen; VGA Save renders
+  into a framebuffer the card's scanout does not show.
+- The next diagnostic (this state is preserved: the machine is HELD,
+  hold-release absent): the System eventlog for this boot (readable
+  next boot offline - the display-service errors), the ATI device's
+  ConfigFlags (FAILEDINSTALL?), and a blind input probe: the session
+  runs, so the GLINET keyboard should work - a D: sentinel via the Run
+  dialog would prove the session renders-to-memory correctly.
+- The rig state: frozen at the break (the daemon polling, hold-all set),
+  the tap corpus in /tmp/opencode/tap.log, the donor packages in
+  /tmp/opencode/donors. The read driver: walk.py (chunked, 16B law).
