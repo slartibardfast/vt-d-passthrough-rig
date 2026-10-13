@@ -144,11 +144,12 @@ def handle(kd, ptype, bcount, pid, cksum, data):
             kd.send_control(T_ACK, pid)
             if os.path.exists(os.path.join(RIG, "hold-tight")):
                 pass                                  # probing the ack path only
-            elif os.path.exists(os.path.join(RIG, "no-probe")):
-                kd.continue_go()
             else:
-                # interrogate the target while it is stopped: GetVersion
-                kd.send_data(T_MANIPULATE, manip_body(API_GET_VERSION), kd.my_pid)
+                # kdcom only accepts a Continue as the reply to a state
+                # change; a GetVersion here re-triggers the break (the
+                # one-second module-load storm). The version interrogation
+                # belongs to a manual break's hold branch.
+                kd.continue_go()
         else:
             log("*** STATE CHANGE %#x pid=%#x - HOLDING (machine frozen) ***" % (newstate, pid))
             for j in range(0, len(data), 16):
