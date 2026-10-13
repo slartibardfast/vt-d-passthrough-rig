@@ -100,12 +100,17 @@ class Kd:
         data = self.readn(bcount) if bcount else b""
         return leader, ptype, bcount, pid, cksum, data
 
-    def continue_go(self):
-        # DBGKD_MANIPULATE_STATE64 with u.Continue2 = { DBG_CONTINUE, control set }
-        # Continue2 is the resume primitive on x64: plain Continue re-raises the
-        # same breakpoint (measured - the int3 came back verbatim).
+    def continue_go(self, action=None):
+        # DBGKD_MANIPULATE_STATE64 with u.Continue2. Two meanings share the
+        # wire: for an EXCEPTION resume the field is u.ReturnStatus and takes
+        # DBG_CONTINUE (measured - the int3 came back verbatim otherwise);
+        # for a STATE-CHANGE resume it is u.ContinueAction, a small enum
+        # (ContinueNormal=1); 0x10002 there is invalid and kdcom re-breaks
+        # (measured - the one-second module-load storm).
+        if action is None:
+            action = DBG_CONTINUE
         self.send_data(T_MANIPULATE, manip_body(API_CONTINUE2,
-                       struct.pack("<I", DBG_CONTINUE)), self.my_pid)
+                       struct.pack("<I", action)), self.my_pid)
 
     def step_over(self):
         # GetContext, then bump Rip past the int3, SetContext, continue.
@@ -145,11 +150,13 @@ def handle(kd, ptype, bcount, pid, cksum, data):
             if os.path.exists(os.path.join(RIG, "hold-tight")):
                 pass                                  # probing the ack path only
             else:
-                # kdcom only accepts a Continue as the reply to a state
-                # change; a GetVersion here re-triggers the break (the
-                # one-second module-load storm). The version interrogation
-                # belongs to a manual break's hold branch.
-                kd.continue_go()
+                # No reply satisfies kdcom on the first load (GetVersion,
+                # Continue2 variants, a type-7 echo - all re-break at 1/s).
+                # Measured: kdcom's own fallback continues the boot after
+                # ~12 ignored exchanges (the 02:09 boot proceeded). Send
+                # GetVersion anyway: if the engine ever answers it, the
+                # version rides in for free; the boot proceeds either way.
+                kd.send_data(T_MANIPULATE, manip_body(API_GET_VERSION), kd.my_pid)
         else:
             log("*** STATE CHANGE %#x pid=%#x - HOLDING (machine frozen) ***" % (newstate, pid))
             for j in range(0, len(data), 16):
