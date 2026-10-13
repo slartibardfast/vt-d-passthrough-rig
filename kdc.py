@@ -359,8 +359,10 @@ def main():
             s.settimeout(0.5)
             while True:
                 try:
-                    handle(kd, *kd.read_packet()[1:])
-                    answered.set()
+                    pkt = kd.read_packet()
+                    answered.set()          # stop the knocker before long
+                    handle(kd, *pkt[1:])    # handling: a hold must not
+                    # receive breakin spam from the knocker thread.
                 except socket.timeout:
                     poll_cmd(kd)
         except (ConnectionError, OSError) as e:
