@@ -305,3 +305,27 @@ work. The pre-logon hang is a thread blocked on something that is never
 signaled (an event/semaphore wait), invisible to the idle loop. Naming it
 requires the thread-list walk (the ntoskrnl offsets task) or the guest's own
 logs once input works.
+
+### The workshop session (2026-10-13, the desktop reachable)
+
+The normal /debug boot with ati2mtag disabled REACHED THE DESKTOP (vgasave,
+640x480, visible on the GLKVM feed). The pre-logon hang did not reproduce with
+the driver disabled. New measured laws:
+
+- sendkey WORKS in-Windows now: the emulated usb-kbd (-device usb-kbd) carries
+  it. The old "sendkey dead in-Windows" law is falsified for the current config.
+  sendkey key names: spc (not sp), slash, minus, backslash, shift-semicolon,
+  shift-dot, shift-7; uppercase names are silently dropped.
+- D: (AMDINSTALL, gpudrv.img FAT32) round-trips live: guest writes flush
+  fast enough for rig-side RO mounts.
+- ati2mtag in-guest: Start=4, ImagePath \??\D:\drv\ati2mtag.sys (the driver
+  loads off the channel disk), Enum=PCI\VEN_1002&DEV_67B0.
+- The GLKVM input chain is broken at the usbfs layer: QEMU (running as
+  dconnolly) could never open /dev/bus/usb (root:root 0664) - the lazy open
+  failed EPERM, the guest addressed but never configured the device (UDC stuck
+  at "addressed"), no endpoint polls, /dev/hidg0 writes blocked forever. Fixed
+  by MODE=0666 in 91-glinet-passthrough.rules; the chain still needs the guest
+  to configure the device on a fresh attach (untested after the fix - the
+  desktop is driven by sendkey meanwhile).
+- ntbtlog always ends at the "ipnat skip" line on every boot (services-phase
+  loads are not logged); it is not a hang marker.
