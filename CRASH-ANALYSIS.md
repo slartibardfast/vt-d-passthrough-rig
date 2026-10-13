@@ -329,3 +329,32 @@ the driver disabled. New measured laws:
   desktop is driven by sendkey meanwhile).
 - ntbtlog always ends at the "ipnat skip" line on every boot (services-phase
   loads are not logged); it is not a hang marker.
+
+### The driver-enabled boot with the fixed USB chain (2026-10-13, late)
+
+With ati2mtag Start=1 and the GLKVM usbfs EPERM fixed (MODE=0666):
+
+- The boot COMPLETED: services phase done by T+20s (SysEvent.Evt: Terminal
+  Services running), auto-logon of Administrator at T+22s (SecEvent 528 type 2,
+  AutoAdminLogon - the desktop comes up by itself).
+- The patched driver LOADED CLEANLY (ntbtlog final block: "Loaded
+  \??\D:\drv\ati2mtag.sys" after PnP retries - it loads off the FAT channel
+  disk, which is why the early attempts fail). No bugcheck. No pre-logon hang.
+  The multi-session pre-logon hang is RETIRED: it was plausibly the GLKVM
+  device wedging USB enumeration, not the driver and not the display stack.
+- The driver mode-sets the CAPTURED connector (the feed locks 1280x1024) but
+  the pixels are black: Windows renders to a surface no visible head scans
+  out. This is the phantom-head defect, now isolated as THE remaining display
+  problem. The intelppm halt observed during this state is the NORMAL XP x64
+  idle path (the processor driver owns the idle HLT), not a wedge.
+- The GLKVM chain CONFIRMED fixed: usbccgp.sys loaded (the composite parent
+  configured), kbdhid bound the keyboard interface, the guest popped the
+  "perform faster" balloon. The dongle input path is alive at the USB level.
+- Open: sendkey input did not execute anything on this boot (the prefetch
+  witness shows no cmd/tasklist runs despite the blind Run-dialog dance).
+  The keyboard mystery on the driver-era desktop is the first question for
+  the next session; the screen-capture tool (a tiny GDI exe via D:) is the
+  missing eye for the phantom-head work.
+- KD lesson: killing the kdc daemon mid-connection deafens the target's KD
+  engine (the reset/breakin churn wedges it). Restart the daemon without
+  touching send-reset unless a fresh boot is planned.
