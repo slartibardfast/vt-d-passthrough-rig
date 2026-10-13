@@ -77,3 +77,53 @@ New facts measured since:
    package with native Hawaii support retires the whole patch lineage
    (the Stage-A..E bugchecks were this build's Hawaii mismatch). An
    operator decision - it changes the driver package.
+
+## The peer notes + the bracket drivers (2026-10-14, late)
+
+The peer notes (host plan/0004) answer "how did they solve it on 32-bit":
+Catalyst 14.4 XP x86 + the full patch chain - device records, tile tables
+(P4->P16), the ASIC capability struct (Bonaire->Hawaii values from
+amdgpu's live gfx.config), PA_SC_RASTER_CONFIG (the SE half only), and
+"Test H": clocks/power solved early via a rewritten EVV parser PLUS the
+SMC firmware graft - 60,574 bytes copied from Windows 7's atikmdag.sys
+(14.100.0.0000) at file 0xBFFA13, with a descriptor-read redirect at
+x86 0xB1AC8. The x64 slot is byte-identical in length (0x2E28AB-
+0x2F1549) - the graft is a straight copy; the redirect was the blocker,
+and our live-KD crash analysis (the +0x8F805 table walk) is in exactly
+that code family.
+
+OUR deployed x64 binary already carries the peer's Part-2 data fixes
+(measured): every tile-table slot has PIPE_CONFIG=17 (P16),
+PA_SC_RASTER_CONFIG=0x3a000012 (the Test-AA SE-half value), and
+GB_ADDR_CONFIG=0x12011003 (the amdgpu-verified value). What x64 still
+lacks is the Test-H equivalent: the SMC graft + the descriptor redirect
+- i.e., precisely the PowerPlay path convicted above.
+
+The bracket drivers (archive.org, in /tmp/opencode/donors):
+- 14-4-xp32-64-dd-ccc-pack1.exe (194MB; x64 driver B166777 - our base
+  family, one revision later than the peer's pack3 B166713)
+- 14-4-win7-win8-win8.1-64-dd-ccc-whql.exe (295MB; WB6A_INF/B171094
+  atikmdag - the x64 Win7 SMC donor)
+- AMD Catalyst 15.6 Beta for Windows Vista (260MB; W76A_INF/B185615
+  atikmdag, 19.3MB expanded)
+- adrenalin 22.6.1 legacy (486MB; WT6A_INF/B381983/amdkmdag.sys, 83MB)
+
+Format conservation (the operator's question): CONFIRMED across the
+whole bracket. The same TF_ task architecture (UploadMCFirmware x3/x5/x4),
+the same assert strings (Invalid ASIC family / Unknown C.I. Device ID in
+all three; PowerPlay uninitialization failed in both 2014 builds), the
+same {ptr,0,ptr,0,family,did,flags,val} device-table record - the Vista
+15.6 Hawaii record is IDENTICAL to ours (family 0x78, val 0x28, only the
+config pointers differ).
+
+The decisive new finding: NO driver generation accepts family 0x78 in
+any UploadMCFirmware (ours [0x14,0x28); Vista 15.6 CIslands
+[0x14,0x3C), SIslands [0x14,0x46), Iceland <0x14, Tonga [0x14,0x28)).
+On WORKING Vista/Win7 Hawaii systems these tasks are simply never
+scheduled for family 0x78 - the memory-controller setup happens under
+the SMC-firmware path instead. The fix is therefore in the TASK
+DISPATCH (the registration/mask layer), not in any family check. The
+name strings are registration call sites (lea rcx, [name]); the next
+step is decoding the task-registration/dispatch conditions in our
+binary via REA xrefs on the TF_ name strings, and comparing against the
+Vista driver's conditions for family 0x78.
