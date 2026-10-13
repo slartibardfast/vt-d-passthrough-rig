@@ -1,59 +1,61 @@
 #!/usr/bin/env python3
-"""Walk the focus ring one shift-tab at a time and screendump each step.
+"""kd_read via the kdc.py cmd-file protocol. Parses new 'READ' dumps from kdc-live.log."""
+import time, sys, re
 
-Measured facts so far:
-  * sendkey reaches the guest. Typed characters appear in the boxes, so the
-    input path is sound.
-  * mouse_move does not reach the guest. A click at the centre of box 2 followed
-    by typing ZZZZZ left box 2 empty, so every click-driven attempt was doomed.
-    Clicking is abandoned.
-  * shift-tab is the one navigation that verifiably works: two of them from the
-    Next button landed focus in box 5 with its text selected.
+LOG = "/home/dconnolly/xp64-rig/kdc-live.log"
+CMD = "/home/dconnolly/xp64-rig/cmd"
 
-Focus order in this dialog runs left to right across the five boxes, so the ring
-should be box1..box5 then Back then Next. This walks it one press at a time and
-captures each step, so the ring is read off the screen instead of assumed.
-"""
-import socket
-import sys
-import time
+def logsize():
+    try: return os.path.getsize(LOG)
+    except OSError: return 0
+import os
 
-SOCK = "/home/dconnolly/xp64-rig/monitor.sock"
-STEPS = 8
+_parity = [None]   # the parity of the last successful exchange
 
+def kd_read(addr, n):
+    import os as _os
+    mark = logsize()
+    with open(CMD, "w") as f:
+        f.write(f"read {addr:x} {n:x}\n")
+    data, actual = _wait_read(mark)
+    if actual:
+        return data, actual
+    # the parity phase may be wrong: try both explicit parities
+    for p in (0x80800001, 0x80800000):
+        mark = logsize()
+        with open(CMD, "w") as f:
+            f.write(f"pid {p:x}\n")
+        time.sleep(0.7)
+        with open(CMD, "w") as f:
+            f.write(f"read {addr:x} {n:x}\n")
+        data, actual = _wait_read(mark)
+        if actual:
+            _parity[0] = p
+            return data, actual
+    return None, 0
 
-class Monitor:
-    def __init__(self, sock=SOCK):
-        self.s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.s.connect(sock)
+def _wait_read(mark, timeout=12):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
         time.sleep(0.4)
-        self.s.recv(65536)
-
-    def cmd(self, c, settle=0.7):
-        self.s.sendall((c + "\n").encode())
-        time.sleep(settle)
-        try:
-            self.s.recv(65536)
-        except OSError:
-            pass
-
-    def close(self):
-        self.s.close()
-
-
-def main():
-    m = Monitor()
-    # Put focus on a known control first so the walk starts from a fixed point.
-    m.cmd("sendkey shift-tab", settle=0.6)  # Back button
-    m.cmd("sendkey shift-tab", settle=0.6)  # into box 5
-    m.cmd("screendump /tmp/opencode/walk-0.ppm", settle=1.2)
-    for i in range(1, STEPS + 1):
-        m.cmd("sendkey shift-tab", settle=0.9)
-        m.cmd(f"screendump /tmp/opencode/walk-{i}.ppm", settle=1.2)
-    m.close()
-    print(f"captured {STEPS + 1} focus steps")
-    return 0
-
+        data = open(LOG, "rb").read()
+        fresh = data[mark:].decode("ascii", "replace")
+        if "READ ret=" in fresh:
+            out = bytearray()
+            actual = 0
+            for line in fresh.splitlines():
+                m = re.match(r"\[\S+\]\s+READ ret=(\S+) actual=(\S+)", line.strip())
+                if m: actual = int(m.group(2), 0)
+                m = re.match(r"\[\S+\]\s+([0-9a-f]{4})  ((?:[0-9a-f]{2} )+)", line.strip())
+                if m:
+                    for b in m.group(2).split():
+                        out.append(int(b, 16))
+            return bytes(out[:actual]), actual
+    return None, 0
 
 if __name__ == "__main__":
-    sys.exit(main())
+    addr = int(sys.argv[1], 16)
+    n = int(sys.argv[2], 16)
+    data, actual = kd_read(addr, n)
+    print(f"read {addr:#x} n={n:#x}: actual={actual}")
+    print(" ".join(f"{b:02x}" for b in data))

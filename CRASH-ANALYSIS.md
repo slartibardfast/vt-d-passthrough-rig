@@ -408,3 +408,52 @@ Instrument state banked for the next session:
   on the guest per the prefetch).
 - The D: channel files only reach the rig reliably when the writing process
   closes them; a boot-time service's single-unclosed file reads stale.
+
+### The KD protocol decoded (2026-10-13, night): the storm, the resets, the parity
+
+The examination's instrument work cracked the KD behavior laws:
+
+- **The first-load storm is kdcom's report-retry.** The loader announces
+  ntoskrnl and waits for the debugger's response; kdcom re-breaks at ~1/s
+  while a reply is pending. On the healthy boots the storm lasted ~14
+  retries (sub-second, one second wall) and the boot proceeded; replying
+  GetVersion instead of Continue2 makes the storm PERMANENT (kdcom waits
+  forever for a proper continue - measured across four boots today).
+  The proven reply per load: Continue2 + DBG_CONTINUE (300+ modules
+  loaded clean with it on the 02:08 boot).
+- **kdcom ignores breakins while in the report loop.** The escape is a
+  RESET control packet: kdcom restarts its state machine and the boot
+  flows (new `reset` cmd in the daemon; one reset unwedged a live storm).
+- **The one non-load state change is 0x3030 = EXCEPTION** (0x3031 =
+  load symbols); the breakin exception carries 0x80000003 and the full
+  CONTEXT in the packet (the 09:36/11:55 dumps).
+- **hold-all forces the hold branch** on any break (otherwise a break
+  landing inside nt is auto-stepped and the machine resumes).
+- **The parity/alternation law (partially mapped):** every debugger
+  packet's id alternates 0x80800000/0x80800001; a repeated id is silently
+  dropped (ack-less). The daemon's flip drifts out of phase after failed
+  exchanges; one read DID land with the correct phase
+  (PsInitialSystemProcess -> the System EPROCESS at 0xfffffab58b5040,
+  16 bytes read clean). walk.py has the parity-retry logic; the phase
+  tracking needs one careful session.
+- **The read size cap:** a 672-byte read returns STATUS_UNSUCCESSFUL;
+  16 bytes works (the cap sits between - bisect when needed).
+
+Display facts banked this session:
+- The registration is COMPLETE (Enum -> Class\{4D36E968}\0001 with
+  InstalledDisplayDrivers=ati2dvag); the legacy Video\{guid} absence is
+  not a defect.
+- ati2dvag.dll has NEVER loaded (zero module records across all boots);
+  the driver-enabled boots load vga.dll + framebuf.dll (VgaSave) - the
+  session always runs on VGA Save.
+- The PowerPlay ASIC-family failure (cislands_hwmgr.c[6179] Invalid ASIC
+  family, the powertune and thermal cascade) reproduces every driver boot
+  at miniport-init time; it is the miniport's init failing, before the
+  display DLL would ever load.
+- This boot (driver enabled, the KD flowing): the boot COMPLETED, the
+  session ran VGA Save, and the feed STILL showed black at 1280x1024.
+  The mode/content split exists even on the VGA session.
+- The rig state left: the guest FROZEN at the 11:55 break (hold-all set,
+  hold-release absent - the state is preserved), the daemon polling, the
+  registers parked at nt+0xcd053. Do not reboot casually: the frozen
+  session is the walk's starting point.

@@ -156,6 +156,12 @@ def handle(kd, ptype, bcount, pid, cksum, data):
                 # then its fallback proceeds and every later load accepts
                 # the same reply first try. Replying GetVersion instead
                 # (tried 10-13) removes the fallback: kdcom waits forever.
+                # THE PARITY LAW (measured): the reply carries the id of
+                # the packet being answered. A retry (the storm) repeats
+                # its id, so the reply repeats it too; a fresh packet
+                # alternates, and then the flip is right. The 02:09
+                # boot's accepted reply had the target's own id.
+                kd.my_pid = pid
                 kd.continue_go()
         else:
             log("*** STATE CHANGE %#x pid=%#x - HOLDING (machine frozen) ***" % (newstate, pid))
@@ -292,9 +298,16 @@ def poll_cmd(kd):
         log("  cmd error: %r" % (e,))
 
 def _dispatch_cmd(kd, line):
-    if line == "break":
+    if line.startswith("pid "):
+        kd.my_pid = int(line.split()[1], 16)
+        log("my_pid set to %#x" % kd.my_pid)
+    elif line == "break":
         kd.s.sendall(BREAKIN)
         log("TX breakin (cmd)")
+    elif line == "reset":
+        hdr = struct.pack("<IHHII", CTRL_LEADER, T_RESET, 0, INITIAL_PID, 0)
+        kd.s.sendall(hdr + TRAILER)
+        log("TX reset (cmd)")
     elif line.startswith("version"):
         parts = line.split()
         pid = int(parts[1], 16) if len(parts) > 1 else None
