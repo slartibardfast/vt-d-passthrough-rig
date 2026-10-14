@@ -1,0 +1,168 @@
+-- allium: 3
+-- patch.allium -- the graft builder contract.
+--
+-- Scope: applying a recorded transformation manifest to a base driver image
+-- and emitting the patched image with a digest that binds it. The builder is
+-- the only path by which campaign grafts (the SMC slot fill, the descriptor
+-- redirect, the dispatch fix) reach a deployable binary.
+-- Includes: manifest ordering, donor range validation, size preservation,
+-- byte-exact donor fills, and the digest binding.
+-- Excludes:
+--   - which grafts the campaign applies (plan/0006's decisions, not this
+--     contract)
+--   - deployment (offline disk surgery, a separate recorded procedure)
+--   - donor selection and deference order (the campaign's choice per graft)
+
+------------------------------------------------------------
+-- External Entities
+------------------------------------------------------------
+
+external entity ByteArray {
+    length: Integer
+}
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+entity BaseImage {
+    bytes: ByteArray
+    status: applying | applied | rejected
+
+    transitions status {
+        applying -> applied
+        terminal: applied, rejected
+    }
+}
+
+entity Manifest {
+    ops: ByteArray              -- the encoded operation list, applied in order
+    position: Integer
+}
+
+entity Output {
+    base: BaseImage
+    position: Integer
+    byte: Integer
+    digest: String when base.status = applied
+}
+
+------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+config {
+    -- The digest binds the emitted image; sha256 is the campaign standard.
+    digest_length: Integer = 32
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule RejectRangeOutsideBase {
+    when: ApplyAttempted(base, manifest)
+
+    requires: some_op_outside(manifest, base)
+
+    ensures: BaseImage.created(base: base, status: rejected)
+    ensures: ByteArray.untouched(base: base)
+    @guidance
+        -- An op that writes past the base image would corrupt the PE layout
+        -- silently. Rejection is loud and precedes any output byte.
+}
+
+rule RejectDonorRangeOutside {
+    when: ApplyAttempted(base, manifest)
+
+    requires: some_fill_donor_range_outside(manifest)
+
+    ensures: BaseImage.created(base: base, status: rejected)
+    ensures: ByteArray.untouched(base: base)
+    @guidance
+        -- A fill reading past its donor would emit padding while claiming
+        -- donor bytes. The SMC slot law demands byte-exact donor bytes;
+        -- anything else must be a loud rejection.
+}
+
+rule BeginApply {
+    when: ApplyAttempted(base, manifest)
+
+    requires: manifest.ops.length > 0
+    requires: not some_op_outside(manifest, base)
+    requires: not some_fill_donor_range_outside(manifest)
+
+    ensures: BaseImage.created(base: base, status: applying)
+    ensures: Manifest.started(manifest: manifest, position: 0)
+}
+
+rule ApplyFill {
+    when: manifest: Manifest.status = started
+    requires: next_op_is_fill(manifest)
+
+    ensures: Output.appended(
+        base: the_base,
+        count: op_size(manifest),
+        source: donor_bytes_at(op_donor_at(manifest)))
+}
+
+rule ApplyPatch {
+    when: manifest: Manifest.status = started
+    requires: next_op_is_patch(manifest)
+
+    ensures: Output.patched(
+        base: the_base,
+        at: op_at(manifest),
+        bytes: patch_bytes(manifest))
+}
+
+rule ApplyComplete {
+    when: base: BaseImage.status transitions_to applied
+    requires: base.status = applying
+    requires: manifest_exhausted(manifest)
+
+    ensures: base.status = applied
+    ensures: Output.digest_bound(base: base, value: sha256_of(output_bytes))
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant SizePreserved {
+    -- A graft never resizes a driver image: the PE headers, section table
+    -- and checksums all assume the recorded size.
+    for base in BaseImages:
+        base.status = applied implies output_length(base) = base.bytes.length
+}
+
+invariant ByteExactDonorFill {
+    -- Every filled byte equals the donor's byte at the recorded position.
+    -- This is the SMC slot law: the firmware image lands byte-exact or not
+    -- at all.
+    for o in Output:
+        o.was_filled implies o.byte = donor_byte_at(o.source_position)
+}
+
+invariant OrderRespected {
+    -- Ops apply in manifest order; a later patch addresses the image as
+    -- left by earlier ops.
+    for o in Output:
+        o.position >= 0
+}
+
+invariant DigestBinds {
+    -- The recorded digest is sha256 of exactly the emitted bytes.
+    for base in BaseImages:
+        base.status = applied
+            implies the_digest(base) = sha256(output_bytes(base))
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface GraftBuilder {
+    provides:
+        ApplyAttempted(base, manifest)
+}

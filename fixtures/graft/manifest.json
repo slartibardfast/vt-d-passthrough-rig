@@ -1,0 +1,16 @@
+{
+  "ops": [
+    {
+      "op": "fill",
+      "at": 1024,
+      "size": 64,
+      "donor": "donor.bin",
+      "donor_at": 32
+    },
+    {
+      "op": "patch",
+      "at": 512,
+      "bytes": "b801000000c3"
+    }
+  ]
+}

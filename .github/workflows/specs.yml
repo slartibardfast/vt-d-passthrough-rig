@@ -26,3 +26,4 @@ jobs:
         run: |
           cargo install --git https://github.com/connollydavid/host-lifecycle host-lifecycle
           host-lifecycle obligations specs/szdd.allium --tests tests --strict-discharge
+          host-lifecycle obligations specs/patch.allium --tests tests --strict-discharge

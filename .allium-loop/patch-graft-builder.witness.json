@@ -1,0 +1,44 @@
+{
+  "goal_slug": "patch-graft-builder",
+  "witnessed_at": "2026-10-14T04:30:14",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "name": "tests-pass",
+      "result": "pass",
+      "ground_truth": "pytest exit 0 (13 passed in 0.72s)"
+    },
+    {
+      "name": "allium-check-clean",
+      "result": "pass",
+      "ground_truth": "exit 0, 0 warning/error diagnostics"
+    },
+    {
+      "name": "allium-analyse-clean",
+      "result": "pass",
+      "ground_truth": "exit 0, 0 warning/error diagnostics"
+    },
+    {
+      "name": "allium-plan-clean",
+      "result": "pass",
+      "ground_truth": "exit 0, 0 warning/error diagnostics"
+    },
+    {
+      "name": "strict-obligations",
+      "result": "pass",
+      "ground_truth": "exit 0 (-- all 32 obligation(s) dispositioned)"
+    }
+  ],
+  "violations": [],
+  "test_hashes": {
+    "tests/test_graft.py": "04d1a7c5b21814b104e0d5302780f43c9fbf2806b5b0d826ebde2556e9360bdd",
+    "tests/dispositions.sh": "af1e467627ececd01157ad85d72f03e9768a7e55086924b18f741e37768992bc",
+    "specs/patch.allium": "0441ecea6fea730189fbf93f4c88176f2ed5f811fa99fabaaa4f83a54d8c5bca",
+    "specs/patch.obligations": "a3ed4a57e07b84be52b5a9a4317b6354bdba5724284c3ff1e8d410b8437c7b69",
+    "graft.py": "8924d498612eb4f70360c80c976027f764f242111cd2561f0af7d9d3bae30dea",
+    "fixtures/graft/base.bin": "70f1c3bae99bdaa0b0cb172f58b68774b120f81244bf0ae21b0d015a3d33b40a",
+    "fixtures/graft/donor.bin": "d1370ca95f8059dc03b973fe6a390191b2f34567d889bf9cb604513d12bf8ca8",
+    "fixtures/graft/expected-out.bin": "5e08bb2ccec73da0f2bd23064abdd850ec7b94df82b0887de8980e2888b4be8a"
+  },
+  "record_path": "specs/patch.allium"
+}

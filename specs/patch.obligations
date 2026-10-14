@@ -1,0 +1,57 @@
+# patch.allium.obligations -- disposition for every `allium plan` obligation.
+# Gate: host-lifecycle obligations specs/patch.allium --tests tests --strict-discharge
+#   <id> => test:<name> [exercises=<symbol>] | structural | waived: <reason>
+# structural = the spec's own allium check/analyse lane covers it (declared
+# field shapes, presence clauses, declared transition graphs).
+
+# --- Spec-integrity (the check/analyse lane) ---
+entity-fields.ByteArray                 => structural
+entity-fields.BaseImage                 => structural
+entity-fields.Manifest                  => structural
+entity-fields.Output                    => structural
+transition-terminal.BaseImage.status    => structural
+
+# --- The digest constant ---
+config-default.digest_length            => test:test_digest_binds exercises=digest_of
+
+# --- Transitions ---
+transition-edge.BaseImage.applying.applied => test:test_committed_oracle_byte_exact exercises=apply_manifest
+transition-rejected.BaseImage.status    => test:test_rejects_range_outside_base exercises=apply_manifest
+
+# --- RejectRangeOutsideBase ---
+rule-success.RejectRangeOutsideBase     => test:test_rejects_range_outside_base exercises=apply_manifest
+rule-failure.RejectRangeOutsideBase.1   => test:test_size_preserved exercises=apply_manifest
+rule-entity-creation.RejectRangeOutsideBase.1 => test:test_rejects_range_outside_base exercises=apply_manifest
+
+# --- RejectDonorRangeOutside ---
+rule-success.RejectDonorRangeOutside    => test:test_rejects_donor_range_outside exercises=apply_manifest
+rule-failure.RejectDonorRangeOutside.1  => test:test_size_preserved exercises=apply_manifest
+rule-entity-creation.RejectDonorRangeOutside.1 => test:test_rejects_donor_range_outside exercises=apply_manifest
+
+# --- BeginApply ---
+rule-success.BeginApply                 => test:test_committed_oracle_byte_exact exercises=apply_manifest
+rule-failure.BeginApply.1               => test:test_rejects_empty_manifest exercises=apply_manifest
+rule-failure.BeginApply.2               => test:test_rejects_range_outside_base exercises=apply_manifest
+rule-failure.BeginApply.3               => test:test_rejects_donor_range_outside exercises=apply_manifest
+rule-entity-creation.BeginApply.1       => test:test_committed_oracle_byte_exact exercises=apply_manifest
+
+# --- ApplyFill / ApplyPatch ---
+rule-success.ApplyFill                  => test:test_donor_fill_byte_exact exercises=apply_manifest
+rule-failure.ApplyFill.1                => test:test_patch_applied exercises=apply_manifest
+rule-success.ApplyPatch                 => test:test_patch_applied exercises=apply_manifest
+rule-failure.ApplyPatch.1               => test:test_donor_fill_byte_exact exercises=apply_manifest
+
+# --- ApplyComplete ---
+rule-success.ApplyComplete              => test:test_digest_binds exercises=apply_manifest
+rule-failure.ApplyComplete.1            => test:test_no_state_carryover exercises=apply_manifest
+rule-failure.ApplyComplete.2            => test:test_rejects_unknown_op exercises=apply_manifest
+
+# --- Invariants ---
+invariant.SizePreserved                 => test:test_size_preserved_fuzzed exercises=apply_manifest
+invariant.ByteExactDonorFill            => test:test_donor_fill_byte_exact exercises=apply_manifest
+invariant.OrderRespected                => test:test_order_respected exercises=apply_manifest
+invariant.DigestBinds                   => test:test_digest_binds exercises=digest_of
+
+# --- Surfaces ---
+surface-actor.GraftBuilder              => structural
+surface-provides.GraftBuilder           => test:test_cli_roundtrip exercises=main
