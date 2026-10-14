@@ -768,3 +768,36 @@ If the dumps are restored (the files staged from a clean XP x64
 source and the CrashControl registry verified), the bugcheck route
 becomes the master instrument: a full memory snapshot - the decrypted
 driver image included - read offline, no read-manipulate limits.
+
+### The abandon wall: the flag works, the boots quit the debugger (2026-10-14, night 12)
+
+The flag bake works as designed - on a debugger-alive boot, the PP
+asserts break into the debugger natively. The wall: since ~06:12 every
+boot abandons the debugger at the first-announce storm (4+4+
+consecutive, two daemon generations, the revert test included). On an
+abandoned boot KdDebuggerNotPresent=true makes every INT3 a no-op, so
+the asserts neutralize themselves and the boot completes undegugged -
+which is why the desktop was visible.
+
+The abandon's shape: kdcom's send-retry window on the first announce
+expires before our 64-byte Continue2 reply drains through the guest's
+1-byte-per-tick UART poll. It is a bandwidth/timing borderline, not a
+protocol error - which is why it tracks host load. The flipped boots
+were the ones where the reply won the race.
+
+Laws added:
+- The write manipulate claims success (ret=0) but does not land while
+  the engine sits in the state-change wait. Writes only work in the
+  exception wait.
+- A stale probe packet is silently lost to UART overrun on a running
+  machine; the daemon's pending state then misparses the next packet.
+  Restart the daemon to clear pending after any unanswered command.
+- boot.py's storm-reset escape was removed earlier and must stay
+  removed: the reset killed intentional holds.
+
+The path forward is one of: (a) shrink or accelerate the reply path
+(QEMU serial tuning, or accept the coin flip and retry more), (b) patch
+kdcom's retry counter in the image (a graft - the counter is known from
+the decompile), or (c) run the assert investigation on a debugger-alive
+retry when the coin lands. The dump stack (dump_atapi.sys) is now
+fixed and untested - any future bugcheck should write MEMORY.DMP.
