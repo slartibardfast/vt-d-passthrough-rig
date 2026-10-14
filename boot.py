@@ -91,8 +91,16 @@ def main():
             print("  boot stalled early - aborting watch")
             break
 
-    print(f"  session_ready={session_ready} after {time.time()-t0:.0f}s "
-          f"({len(names)} unique modules, {n_loads} storm loads)")
+    # the abandon signature: kdcom flips to the 0x80800800-form ids when it
+    # gives up on the debugger (measured). A session reached after that is
+    # an UNDEBUGGED boot - useless for the instrument, fatal to report.
+    abandoned = False
+    with open(LOG, errors="replace") as f:
+        abandoned = "80800800" in f.read()
+    print(f"  session_ready={session_ready} abandoned={abandoned} "
+          f"after {time.time()-t0:.0f}s ({len(names)} unique modules)")
+    if abandoned:
+        return 2
     return 0 if session_ready else 1
 
 

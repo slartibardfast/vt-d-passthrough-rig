@@ -683,3 +683,41 @@ The full instrument chain is measured working end to end:
 9. The SMC firmware structure: five per-ASIC copies sharing a header at
    0x2a8fbb..0x2e28ab; Hawaii is the fifth, exactly where the peer
    grafted. The peer's offset table is valid for the icafe build.
+
+### THE DESKTOP IS VISIBLE - the black-screen mechanism verified live (2026-10-14, night 9)
+
+The flag-baked boot abandoned the debugger at the storm (kdcom flipped
+to its 0x80800800 ids - the retry-exhaustion abandon) and continued
+without the debugger. On that boot:
+
+- The PP asserts could not INT3 (the kernel debugger is gone), so the
+  powertune/hwmgr asserts returned failure and the PP init stopped
+  BEFORE the miniport's display mode set.
+- The feed shows a LIVE DESKTOP: Luna wallpaper, Recycle Bin, taskbar
+  with clock, a mouse cursor, an open cmd window - at 640x480, the
+  VGA Save default, confirmed by the dongle's own status readout.
+- The visible error dialog names cap.exe's real failure at last:
+  api-ms-win-crt-environment-l1-1-0.dll missing - cap.exe was built
+  against the UCRT and never ran at all on XP. The "blocked capture"
+  verdict of the previous session is retracted; the tool was refused
+  by the loader before main.
+
+The mechanism, now verified live: VGA Save renders the desktop into
+its framebuffer and the scanout shows it at 640x480. The miniport's
+mode set (1280x1024, measured on every prior boot) switches the
+display engine to the ATI CRTC, and the session's surface is orphaned
+- the scanner reads a surface nothing draws into. That is the whole
+black screen. Every boot with a working miniport mode set showed black;
+this boot, where the mode set never happened, shows the desktop.
+
+Consequences:
+- The display verdict is rendered-but-unshown, with the orphaning at
+  the mode-set handoff.
+- The repair is the XDDM stack binding (ati2dvag loading, which owns
+  render and scanout coherently) or a surface/CRTC re-anchor.
+- cap.exe must be rebuilt XP-clean (no UCRT imports) to be a capture
+  instrument again.
+- The debugger-attached boots cannot show the desktop: the KD dies at
+  the storm abandon on most boots, and on boots where it lives, the
+  flag-baked asserts break the PP init before the mode set. Instrument
+  boots and desktop boots are now provably different worlds.

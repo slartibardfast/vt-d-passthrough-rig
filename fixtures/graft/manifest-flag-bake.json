@@ -1,0 +1,4 @@
+{"ops": [
+  {"op": "patch", "at": "0x5cd030", "bytes": "01000000"},
+  {"op": "pe-checksum"}
+]}
