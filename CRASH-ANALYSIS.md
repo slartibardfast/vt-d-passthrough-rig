@@ -744,3 +744,27 @@ runs. The next instrument is an int3 at the miniport's IOCTL dispatch
 on a debugger-alive boot (the retry loop makes those reachable): each
 VIDEO_ request in the enable chain gets caught and named, and the
 failing one identifies the bind blocker for the graft manifests.
+
+### The read-refusal law and the packed binary (2026-10-14, night 11)
+
+Two laws close the static route and define the dynamic one:
+
+- The read manipulate only serves NON-PAGED kernel memory. Pool
+  structures (EPROCESS, ETHREAD) read fine; the driver's paged image
+  (.text/.data) reads as STATUS_UNSUCCESSFUL at every address tried,
+  held or running. The loaded image is unreachable through the debugger.
+- ati2mtag.sys is PACKED. The candidate HW_INITIALIZATION_DATA pointers
+  in .data point at .text whose bytes are ciphertext (read_bytes shows
+  no code), and the section names are non-standard. Static analysis of
+  the packed regions is dead; the decrypted image exists only in
+  runtime memory - which the debugger cannot read - and in crash dumps,
+  which this guest is not writing even when the crash happens with the
+  debugger detached (the pagefile stays zeroed after an 0x7e with
+  CrashDumpEnabled=2 and a 2GB pagefile).
+
+The crash-dump stack itself is the next suspect: crashdmp.sys,
+dump_diskdump.sys and friends may be stripped from the icafe image.
+If the dumps are restored (the files staged from a clean XP x64
+source and the CrashControl registry verified), the bugcheck route
+becomes the master instrument: a full memory snapshot - the decrypted
+driver image included - read offline, no read-manipulate limits.
