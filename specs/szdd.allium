@@ -1,0 +1,157 @@
+-- allium: 3
+-- szdd.allium -- the SZDD-A codec contract.
+--
+-- Scope: the decompression of Microsoft SZDD ("A" variant) streams as used
+-- for Windows driver-package .sy_ files, and the rejection of everything else.
+-- Includes: signature validation, literal decoding, window back-references,
+-- the 4 KiB history window lifecycle, and the output-equality contract with
+-- Microsoft's own expand.exe.
+-- Excludes:
+--   - compression (a separate concern, specified with the graft builder)
+--   - filename reconstruction (the header's missing-char byte names a file,
+--     not payload data)
+--   - the KWAJ variant (not used by any package in this campaign)
+
+------------------------------------------------------------
+-- External Entities
+------------------------------------------------------------
+
+external entity ByteArray {
+    length: Integer
+}
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+entity SzddArchive {
+    stream: ByteArray
+    status: decoding | decoded | rejected
+
+    transitions status {
+        decoding -> decoded
+        terminal: decoded, rejected
+    }
+
+    payload_size: Integer when status = decoded
+}
+
+entity Payload {
+    archive: SzddArchive
+    position: Integer
+    byte: Integer
+}
+
+entity Window {
+    archive: SzddArchive
+    position: Integer
+    byte: Integer
+}
+
+------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+config {
+    -- The format constants are the contract: Microsoft's SZDD-A fixes them.
+    window_size: Integer = 4096
+    window_start: Integer = 4080            -- the ring begins 16 back from the end
+    min_reference_length: Integer = 3        -- a back-reference copies at least this many
+    max_reference_length: Integer = 18       -- and at most this many
+    group_items: Integer = 8                 -- tokens per control byte
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule RejectForeignFormat {
+    when: DecodeAttempted(stream)
+
+    requires: not stream.carries_szdd_signature
+
+    ensures: SzddArchive.created(stream: stream, status: rejected)
+    ensures: ByteArray.untouched(stream: stream)
+    @guidance
+        -- Rejection must be loud (a distinct, catchable outcome) and must
+        -- precede any output: a foreign stream never yields partial payload.
+}
+
+rule BeginDecode {
+    when: DecodeAttempted(stream)
+
+    requires: stream.carries_szdd_signature
+
+    ensures: SzddArchive.created(
+        stream: stream,
+        status: decoding
+    )
+    ensures: Window.filled(
+        archive: the_archive,
+        size: config.window_size,
+        fill: space,
+        position: config.window_start
+    )
+}
+
+rule DecodeLiteral {
+    when: archive: SzddArchive.status = decoding
+    requires: next_token_is_literal(archive)
+
+    ensures: Payload.created(archive: archive, byte: literal_byte, position: payload_length(archive))
+    ensures: Window.appended(archive: archive, byte: literal_byte)
+}
+
+rule DecodeBackReference {
+    when: archive: SzddArchive.status = decoding
+    requires: next_token_is_reference(archive)
+
+    ensures: Payload.appended(archive: archive,
+                              count: reference_length(archive),
+                              source: window_at(reference_distance(archive)))
+    ensures: Window.caught_up(archive: archive, copied: reference_length(archive))
+}
+
+rule DecodeComplete {
+    when: archive: SzddArchive.status transitions_to decoded
+    requires: archive.status = decoding
+    requires: input_exhausted(archive)
+
+    ensures: archive.status = decoded
+    ensures: archive.payload_size = payload_length(archive)
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant WindowOnlyEmittedBytes {
+    -- Every byte in the history window was previously emitted as payload.
+    for archive in SzddArchives:
+        for b in Window:
+            b.archive = archive implies Payload.was_emitted(archive: archive, byte: b.byte)
+}
+
+invariant Termination {
+    -- The decode consumes the input monotonically and each token emits a
+    -- bounded amount of payload, so every decode terminates.
+    for archive in SzddArchives:
+        archive.consumed <= archive.stream.length
+}
+
+invariant ExactExpandCompatibility {
+    -- The decoded payload equals Microsoft expand.exe's output for the
+    -- same stream. Verified against captured reference pairs.
+    for archive in SzddArchives:
+        archive.status = decoded
+            implies archive.payload = reference_decode(archive.stream)
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface Decoder {
+    provides:
+        DecodeAttempted(stream)
+}

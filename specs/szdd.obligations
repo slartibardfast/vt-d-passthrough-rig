@@ -1,0 +1,53 @@
+# szdd.allium.obligations -- disposition for every `allium plan` obligation.
+# Gate: host-lifecycle obligations specs/szdd.allium --tests tests --strict-discharge
+#   <id> => test:<name> [exercises=<symbol>] | structural | waived: <reason>
+# structural = the spec's own allium check/analyse lane covers it (declared
+# field shapes, presence clauses, declared transition graphs).
+
+# --- Spec-integrity (the check/analyse lane) ---
+entity-fields.ByteArray              => structural
+entity-fields.SzddArchive            => structural
+entity-fields.Payload                => structural
+entity-fields.Window                 => structural
+when-presence.SzddArchive.payload_size => structural
+transition-terminal.SzddArchive.status => structural
+transition-rejected.SzddArchive.status => test:test_rejects_foreign_stream exercises=szdd_expand
+transition-edge.SzddArchive.decoding.decoded => test:test_reference_pair_byte_exact exercises=szdd_expand
+
+# --- The format constants ---
+config-default.window_size           => test:test_format_constants exercises=WINDOW_SIZE
+config-default.window_start          => test:test_format_constants exercises=WINDOW_START
+config-default.min_reference_length  => test:test_format_constants exercises=MIN_REFERENCE_LENGTH
+config-default.max_reference_length  => test:test_format_constants exercises=MAX_REFERENCE_LENGTH
+config-default.group_items           => test:test_format_constants exercises=GROUP_ITEMS
+
+# --- RejectForeignFormat ---
+rule-success.RejectForeignFormat     => test:test_rejects_foreign_stream exercises=szdd_expand
+rule-failure.RejectForeignFormat.1   => test:test_rejects_foreign_stream exercises=szdd_expand
+rule-entity-creation.RejectForeignFormat.1 => test:test_rejects_foreign_stream exercises=szdd_expand
+
+# --- BeginDecode (the header law: the 14-byte header, the window reset) ---
+rule-success.BeginDecode             => test:test_header_is_fourteen_bytes exercises=szdd_compress,szdd_expand
+rule-failure.BeginDecode.1           => test:test_rejects_foreign_stream exercises=szdd_expand
+rule-entity-creation.BeginDecode.1   => test:test_header_is_fourteen_bytes exercises=szdd_compress
+
+# --- DecodeLiteral / DecodeBackReference (driven by real decodes) ---
+rule-success.DecodeLiteral           => test:test_reference_pair_byte_exact exercises=szdd_expand
+rule-failure.DecodeLiteral.1         => test:test_termination_on_fuzzed_streams exercises=szdd_expand
+rule-entity-creation.DecodeLiteral.1 => test:test_reference_pair_byte_exact exercises=szdd_expand
+rule-success.DecodeBackReference     => test:test_reference_pair_byte_exact exercises=szdd_expand
+rule-failure.DecodeBackReference.1   => test:test_termination_on_fuzzed_streams exercises=szdd_expand
+
+# --- DecodeComplete ---
+rule-success.DecodeComplete          => test:test_reference_pair_byte_exact exercises=szdd_expand
+rule-failure.DecodeComplete.1        => test:test_termination_on_fuzzed_streams exercises=szdd_expand
+rule-failure.DecodeComplete.2        => test:test_termination_on_fuzzed_streams exercises=szdd_expand
+
+# --- Invariants ---
+invariant.WindowOnlyEmittedBytes     => test:test_reference_pair_byte_exact exercises=szdd_expand
+invariant.Termination                => test:test_termination_on_fuzzed_streams exercises=szdd_expand
+invariant.ExactExpandCompatibility   => test:test_reference_pair_byte_exact exercises=szdd_expand
+
+# --- Surfaces ---
+surface-actor.Decoder                => structural
+surface-provides.Decoder             => test:test_reference_pair_byte_exact exercises=szdd_expand

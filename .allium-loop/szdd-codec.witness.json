@@ -1,0 +1,50 @@
+{
+  "goal_slug": "szdd-codec",
+  "witnessed_at": "2026-10-14T00:39:21",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "name": "tests-pass",
+      "result": "pass",
+      "ground_truth": "pytest exit 0, 6/6 passed (runner output re-run by witness)"
+    },
+    {
+      "name": "allium-check-clean",
+      "result": "pass",
+      "ground_truth": "allium check specs exit 0, 1 info (external-entity source hint), 0 warnings"
+    },
+    {
+      "name": "allium-analyse-clean",
+      "result": "pass",
+      "ground_truth": "allium analyse specs exit 0, 0 findings"
+    },
+    {
+      "name": "obligations-discharged",
+      "result": "pass",
+      "ground_truth": "host-lifecycle obligations --strict-discharge exit 0, all 32 dispositioned"
+    },
+    {
+      "name": "no-test-weakened",
+      "result": "inconclusive",
+      "ground_truth": "no propagate ledger: the tests were authored at discharge time (distill-from-code), not generated; hashes recorded now for future tend-loops"
+    },
+    {
+      "name": "weed-verdict",
+      "result": "inconclusive",
+      "ground_truth": "no weed run yet: the spec was distilled from the code this session; weed applies at the first divergence check"
+    },
+    {
+      "name": "open-questions",
+      "result": "pass",
+      "ground_truth": "the spec declares no open questions; none parked"
+    }
+  ],
+  "violations": [],
+  "test_hashes": {
+    "tests/test_szdd.py": "097efa718fe74d9c",
+    "tests/dispositions.sh": "700de4c4b2b9cae0",
+    "specs/szdd.allium": "76e0f275b94f83bf",
+    "specs/szdd.obligations": "8fd466ae2d26405c"
+  },
+  "record_path": ".allium-loop/szdd-codec.witness.json"
+}

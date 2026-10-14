@@ -1,0 +1,28 @@
+name: specs
+on: [push]
+jobs:
+  allium:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: install the toolchain
+        run: |
+          cargo install allium-cli
+          pip install hypothesis pytest
+      - name: check
+        run: allium check specs
+      - name: analyse
+        run: allium analyse specs
+      - name: plan
+        run: allium plan specs
+      - name: tests
+        run: |
+          python -m venv venv
+          ./venv/bin/pip install hypothesis pytest
+          ./venv/bin/python -m pytest tests/test_szdd.py -q
+      - name: obligations
+        run: |
+          cargo install --git https://github.com/connollydavid/host-lifecycle host-lifecycle
+          host-lifecycle obligations specs/szdd.allium --tests tests --strict-discharge
