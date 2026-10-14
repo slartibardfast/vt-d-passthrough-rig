@@ -562,3 +562,41 @@ trip), the walk-diff as a first-class command, the boot orchestrator.
 The rig state: held at the 00:49 break, the system degraded to 6
 processes. The System eventlog on the next boot is now the primary
 evidence: the service-failure records will name what killed the fleet.
+
+### The protocol laws consolidated + the SetContext mystery defined (2026-10-14, night 5)
+
+The end-to-end tooling session hammered the last protocol walls:
+
+- **The checksum law, CORRECTED**: kdcom compares the FULL 32-bit sum.
+  Our 16-bit truncation broke every packet whose sum exceeded 0xffff -
+  the SetContext (1280-byte body) NAK-looped forever while small
+  packets matched by luck. Fixed in the daemon (sum & 0xFFFFFFFF).
+- **The read cap refined again**: on a healthy session the engine
+  CLAMPS reads to 16 bytes (min(requested,16), no error). The old
+  STATUS_UNSUCCESSFUL responses were the poisoned session, not a law.
+- **The hold-drain ack law**: an unacked state change is re-sent by
+  kdcom forever; the hold loop's drain MUST ack (fixed - the drain
+  now acks and logs).
+- **The boot-breakpoint law**: nt fires a chain of int3s during init
+  (measured at nt+0x4b3a5, nt+0x81416c, nt+0x2e974). Resuming an int3
+  without RIP+1 re-executes it forever - the boot-era holds must STEP
+  (GetContext, RIP+1, SetContext, continue). The daemon has a `step`
+  cmd; boot.py steps boot-era holds automatically. ALSO: holding the
+  boot bp for 20 minutes POISONS the storage init (the crcdisk hang,
+  measured) - boot-era holds must be released within seconds.
+- **The orchestration laws**: the VFIO group teardown lags the QEMU
+  exit (wait for fuser to clear or the relaunch fails "resource
+  busy"); the clean boot (daemon from t=0, hands off, no hold-all
+  during the boot) flows 117 modules to the session era, every time.
+- **The degradation cascade measured**: the black-screen build loses
+  processes progressively (17 -> 9 -> 6 across probe cycles; explorer
+  itself exited). The System eventlog (next clean stop) names the
+  killer.
+
+**The one remaining protocol mystery**: kdcom silently rejects the
+SetContext manipulate (1296 bytes) while accepting the GetContext (64
+bytes) and the reads - same id, same framing, the 32-bit checksum
+correct. The candidate: kdcom's large-manipulate framing split (the
+block reader FUN_7ff6a185060's exact header/data lengths for
+bytecounts > 0x40). One focused decode of that path finishes the
+tooling; then the walk, the verdict, and the repair ladder run.

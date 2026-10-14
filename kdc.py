@@ -79,8 +79,12 @@ class Kd:
         # kd_expected; never flip on send - the ack handler flips on
         # acceptance.
         pid = self.kd_expected
+        # the checksum is the FULL 32-bit sum of the data (kdcom compares a
+        # 32-bit int - KdSendPacket stores the untruncated sum; a 16-bit
+        # field broke every packet whose sum exceeded 0xffff, measured on
+        # the SetContext of the boot-breakpoint step-over)
         hdr = struct.pack("<IHHII", DATA_LEADER, ptype, len(data), pid,
-                          (sum(data) & 0xFFFF) if data else 0)
+                          (sum(data) & 0xFFFFFFFF) if data else 0)
         self.s.sendall(hdr + data + TRAILER)
         self.last_tx = (ptype, data, pid)
         self.last_sent_id = pid
@@ -196,7 +200,11 @@ def handle(kd, ptype, bcount, pid, cksum, data):
                     pkt = kd.read_packet()
                     leader, ptype, bcount, pid, cksum, data = pkt
                     if ptype == T_STATE_CHANGE64:
-                        log("hold: state-change re-send - ignored (machine held)")
+                        # MUST ack: kdcom re-sends unacked state changes
+                        # forever (measured - the re-send spam) and the
+                        # engine's continue-wait sits behind the ack.
+                        kd.send_control(T_ACK, pid)
+                        log("hold: state-change re-send - acked")
                     else:
                         handle(kd, ptype, bcount, pid, cksum, data)
                 except socket.timeout:
@@ -328,6 +336,9 @@ def _dispatch_cmd(kd, line):
     elif line == "break":
         kd.s.sendall(BREAKIN)
         log("TX breakin (cmd)")
+    elif line == "step":
+        kd.step_over()          # RIP+1 past an int3, SetContext, continue
+        log("TX step-over (cmd)")
     elif line == "reset":
         hdr = struct.pack("<IHHII", CTRL_LEADER, T_RESET, 0, INITIAL_PID, 0)
         kd.s.sendall(hdr + TRAILER)
