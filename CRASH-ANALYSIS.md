@@ -801,3 +801,42 @@ kdcom's retry counter in the image (a graft - the counter is known from
 the decompile), or (c) run the assert investigation on a debugger-alive
 retry when the coin lands. The dump stack (dump_atapi.sys) is now
 fixed and untested - any future bugcheck should write MEMORY.DMP.
+
+## Night 2026-10-14 (late): the wall was three defects, not kdcom
+
+Measured this session, each one the hard way:
+
+1. **Deploy law (violated twice): kdcom deploys go to `xp64-gpu.raw`** —
+   the disk `run-gpu-vm.sh` actually boots. `install-blank.raw` is a
+   different file (distinct inode). Both earlier kdcom patches (the
+   retry-count and the first gate build) were deployed to the wrong
+   disk and never ran in the guest. The driver channel (`gpudrv.img`,
+   the FAT image) was always correct; only system32 surgery was wrong.
+2. **0x80800800 is kdcom's STATIC not-present id, not an abandon
+   marker.** Every boot announces ntoskrnl with it first; the daemon's
+   passive acks flip the pair to 0x80800000/0x80800001 about 10s in.
+   boot.py's detector grepped for "ever seen" and executed healthy
+   boots at 50s. Fixed: alive = "RX ack pid=0x8080000" in the log.
+3. **The knocker was never the poison.** Knocker-off boots flip and go
+   alive without any reset. The "reset spam poisons" law describes a
+   different failure (mid-hold spam), not the boot-start flip.
+4. **The kdcom send-loop abandon gate, instruction-exact** (Ghidra base
+   0x7ff6a1800000, PAGEKD raw 0x1a00): `85 c0 75 6c` at file 0x21d0 =
+   TEST EAX,EAX; JNZ short +0x6c to the send path at va ...85840; the
+   fall-through is the state-checked abandon (state 7 subcode 0x3031 →
+   KdDebuggerNotPresent=1, ids to 0x80800800/0x80800000). The count is
+   re-armed from nt's *param_4 every send, so .data patches are dead.
+   Graft: `eb 6c 90 90` (unconditional jump over the gate) + PE
+   checksum, sha256 acb2c38a3bd5dc63..., deployed to the boot disk.
+5. **The knock flips and the captor holds.** Fresh daemon + one
+   `knock` cmd → breakin lands (exc=0x80000003 at 0xfffff8000104b350),
+   state change 0x3030, HOLDING, kernel reads flowing (paged-pool VAs
+   in the hexdump). The wall is broken end to end.
+6. **pmemsave quirks**: HMP size arg is 32-bit (4GB exact overflows —
+   dump two 2GB halves); relative filenames only (the expression
+   parser eats a leading `/` as division); files land in QEMU's cwd
+   (the rig dir). **Always sync + size-verify after a dump** — a host
+   reboot mid-dump silently shrinks both halves (page-cache tails
+   lost): measured h1 2GB→1.27GB, h2 2.1GB→0.69GB.
+7. **ctx result packet never follows the ack** (daemon issue,
+   uninvestigated) — the QEMU dump route makes it non-blocking.

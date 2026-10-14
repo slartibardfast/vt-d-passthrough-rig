@@ -91,12 +91,15 @@ def main():
             print("  boot stalled early - aborting watch")
             break
 
-    # the abandon signature: kdcom flips to the 0x80800800-form ids when it
-    # gives up on the debugger (measured). A session reached after that is
-    # an UNDEBUGGED boot - useless for the instrument, fatal to report.
-    abandoned = False
+    # 0x80800800 is kdcom's STATIC not-present id: every boot announces with
+    # it first, then the daemon's acks flip the pair ~10s in (measured
+    # 2026-10-14). "Ever seen" is therefore not the abandon test - it fires
+    # on every healthy boot. The session is alive iff the guest ever acked
+    # from the present pair.
+    alive = False
     with open(LOG, errors="replace") as f:
-        abandoned = "80800800" in f.read()
+        alive = "RX ack pid=0x8080000" in f.read()
+    abandoned = not alive
     print(f"  session_ready={session_ready} abandoned={abandoned} "
           f"after {time.time()-t0:.0f}s ({len(names)} unique modules)")
     if abandoned:
