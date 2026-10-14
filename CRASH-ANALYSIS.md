@@ -625,3 +625,26 @@ shows a rendered desktop while the feed shows black: the render/scanout
 split is convicted at the software level, and the repair is the
 display-path bring-up (the vga-save-to-ATI handoff), not PP, not the
 session, not the firmware.
+
+### The capture blocked in the driver path - the render probe's verdict (2026-10-14, night 7)
+
+The staged capture fired on the healthy boot: the Run key ran
+install.bat, cmd created cap-result.txt, and cap.exe launched. Four
+minutes later the BMP still did not exist, cap-result.txt was still
+zero bytes, and the vcpu was alive and executing the whole time. The
+GDI capture blocks inside the display driver path - framebuf/vga down
+to the miniport IOCTL - and the IOCTL never returns. The machine
+survives; the capture thread does not.
+
+Combined with the feed reading signal-black (a live 1280x1024 timing,
+black pixels) and the NX fault loop at ati2mtag .data+0x1CC8D4 (the
+corrupted runtime-computed pointer, the faulting instruction the resume
+point), the display picture is: the fallback stack renders into a
+surface the scanner does not read, and any path that drives the
+miniport's GPU interaction - the capture's IOCTLs, the PP task dispatch
+- either stalls forever or jumps through the corrupted pointer.
+
+The KTHREAD stack walk (queued tooling) names cap.exe's exact blocking
+frame next session. The graft thread (the builder, the SMC slot, the
+dispatch fix, now also the corrupted-pointer repair) is the unblock
+for everything display-side.
