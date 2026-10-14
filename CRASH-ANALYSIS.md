@@ -721,3 +721,26 @@ Consequences:
   the storm abandon on most boots, and on boots where it lives, the
   flag-baked asserts break the PP init before the mode set. Instrument
   boots and desktop boots are now provably different worlds.
+
+### The capture instrument works and the verdict is triple-sourced (2026-10-14, night 10)
+
+cap2.exe (the CRT-free rewrite: Win32-only imports, a raw entry point,
+a local memset) ran on XP x64 with errorlevel 0 and wrote a valid
+640x480x32 BMP through the Run-key channel. The capture, the feed, and
+the live registry now agree:
+
+- The GDI capture shows the RENDERED desktop: classic-blue title bars,
+  teal, the XP cream dialog face, red - real content, non-uniform.
+- The feed shows the SAME desktop scanned out at 640x480.
+- The live Video registry shows the fallback's rewrite again
+  (VgaCompatible=1, Standard VGA descriptions over the ATI key) - the
+  XDDM refusal is the boot-time constant it has always been.
+
+So the session renders, the scanout works, and the desktop is visible
+at the VGA Save default. The remaining gap to the campaign goal is
+narrow and precise: the XDDM stack (ati2dvag) does not bind, so the
+miniport's 1280x1024 mode set orphans the scanned surface whenever it
+runs. The next instrument is an int3 at the miniport's IOCTL dispatch
+on a debugger-alive boot (the retry loop makes those reachable): each
+VIDEO_ request in the enable chain gets caught and named, and the
+failing one identifies the bind blocker for the graft manifests.
