@@ -600,3 +600,28 @@ correct. The candidate: kdcom's large-manipulate framing split (the
 block reader FUN_7ff6a185060's exact header/data lengths for
 bytecounts > 0x40). One focused decode of that path finishes the
 tooling; then the walk, the verdict, and the repair ladder run.
+
+### The cascade RETRACTED - the eventlog vindicates the system (2026-10-14, night 6)
+
+The degraded boot's System eventlog (read offline, the frozen boot's
+flushed records): BOTH boots show identical, HEALTHY service starts -
+NLA, ALG, Terminal Services running, no failures. The "17 -> 9 -> 6
+process death spiral" was an ARTIFACT: my process walks spanned the
+daemon's broken eras (the hold-loop read failures), and the shrinking
+lists were READ FAILURES, not process exits. Retracted.
+
+The corrected picture, now consistent across every instrument:
+- Every boot: the full session starts cleanly (the eventlog, the
+  17-process walk on the fresh boot, explorer included).
+- The black screen: the ONLY defect. The display output path.
+- The input probe (ctrl-shift-esc -> taskmgr): taskmgr never appeared -
+  but the probe was sent across mixed frozen/running eras; it needs a
+  redo on a clean held state before "the input is dead" is claimed.
+
+**The next instrument, already built**: cap.exe (the GDI screen
+capture, compiled this campaign) staged through the proven D: channel
+with a boot trigger - the framebuffer content readback. If the capture
+shows a rendered desktop while the feed shows black: the render/scanout
+split is convicted at the software level, and the repair is the
+display-path bring-up (the vga-save-to-ATI handoff), not PP, not the
+session, not the firmware.

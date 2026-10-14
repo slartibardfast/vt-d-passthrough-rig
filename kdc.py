@@ -190,6 +190,22 @@ def handle(kd, ptype, bcount, pid, cksum, data):
                     kd.step_over()
                     return
             kd.send_control(T_ACK, pid)
+            # THE BACKLOG FLUSH: hours of unread replies queue ahead of
+            # every fresh packet; raw-discard until the socket is quiet,
+            # then the parsed drain handles only fresh traffic.
+            self_timeout = kd.s.gettimeout()
+            kd.s.settimeout(0.05)
+            dropped = 0
+            try:
+                while True:
+                    if not kd.s.recv(65536):
+                        break
+                    dropped += 1
+            except socket.timeout:
+                pass
+            kd.s.settimeout(self_timeout)
+            if dropped:
+                log("hold entry: %d stale socket chunks flushed" % dropped)
             poll_cmd(kd)     # same-call dispatch: this is the window that works
             while not os.path.exists(HOLD_RELEASE):
                 poll_cmd(kd)                     # commands work while held
