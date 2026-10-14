@@ -45,6 +45,9 @@ API_CONTINUE     = 0x00003136
 API_CONTINUE2    = 0x0000313C     # the exception-resume variant: carries the control set
 API_GET_VERSION  = 0x00003146     # 0x313C is Continue2 - measured law from windbgkd.h
 API_READ_VM      = 0x00003130
+API_WRITE_VM     = 0x00003131
+API_GET_CTX      = 0x00003132
+API_SET_CTX      = 0x00003133
 API_READ_PHYS    = 0x00003139
 API_GET_CONTEXT  = 0x00003132
 API_SET_CONTEXT  = 0x00003133
@@ -220,8 +223,12 @@ def handle(kd, ptype, bcount, pid, cksum, data):
                         # MUST ack: kdcom re-sends unacked state changes
                         # forever (measured - the re-send spam) and the
                         # engine's continue-wait sits behind the ack.
+                        # MUST capture: an assert-break arriving mid-hold
+                        # is a real catch (the drain previously acked and
+                        # silenced it - measured, the powertune hold).
                         kd.send_control(T_ACK, pid)
-                        log("hold: state-change re-send - acked")
+                        captor_catch(kd, 0x3030, pid, data)
+                        log("hold: state-change re-send - acked+captured")
                     else:
                         handle(kd, ptype, bcount, pid, cksum, data)
                 except socket.timeout:
@@ -267,6 +274,12 @@ def handle(kd, ptype, bcount, pid, cksum, data):
                 struct.unpack_from("<H", ctx, 0x3C)[0], struct.unpack_from("<H", ctx, 0x3E)[0],
                 struct.unpack_from("<H", ctx, 0x40)[0], struct.unpack_from("<H", ctx, 0x42)[0],
                 struct.unpack_from("<I", ctx, 0x44)[0]))
+            kd.pending = None
+            kd.send_control(T_ACK, pid)
+            return
+        if pending == "write-ack":
+            got = struct.unpack_from("<I", data, 0x1C)[0] if len(data) >= 0x20 else 0
+            log("WRITE ret=%#x written=%#x" % (ret & 0xFFFFFFFF, got))
             kd.pending = None
             kd.send_control(T_ACK, pid)
             return
@@ -406,6 +419,12 @@ def _dispatch_cmd(kd, line):
     elif line == "step":
         kd.step_over()          # RIP+1 past an int3, SetContext, continue
         log("TX step-over (cmd)")
+    elif line == "ctx":
+        # GetContext only (api 0x3132); the reply lands in the ctx-dump branch
+        u = struct.pack("<II", 0, 0x4D0)              # u.GetContext.ContextFlags?
+        kd.send_data(T_MANIPULATE, manip_body(API_GET_CTX, u), kd.my_pid)
+        kd.pending = "ctx-dump"
+        log("TX get-context (cmd)")
     elif line == "reset":
         hdr = struct.pack("<IHHII", CTRL_LEADER, T_RESET, 0, INITIAL_PID, 0)
         kd.s.sendall(hdr + TRAILER)
@@ -435,6 +454,15 @@ def _dispatch_cmd(kd, line):
         u = struct.pack("<QII", addr, cnt, 0)   # u.ReadPhysicalMemory
         kd.send_data(T_MANIPULATE, manip_body(API_READ_PHYS, u), kd.my_pid)
         kd.pending = "read-dump"
+    elif line.startswith("write "):
+        # write <hexaddr> <hexbytes> - DBGKD_WRITE_MEMORY (api 0x3131)
+        _, a, hexb = line.split(" ", 2)
+        addr = int(a, 16)
+        data = bytes.fromhex(hexb.replace(" ", ""))
+        u = struct.pack("<QII", addr, len(data), 0)   # u.WriteMemory
+        kd.send_data(T_MANIPULATE, manip_body(API_WRITE_VM, u) + data, kd.my_pid)
+        kd.pending = "write-ack"
+        log("TX write len=%d addr=%#x" % (len(data), addr))
     elif line == "go":
         kd.continue_go()
     elif line == "step":

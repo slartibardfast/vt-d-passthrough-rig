@@ -82,12 +82,8 @@ def main():
                 f.write("step\n")
             boot_bp_released = True
             print("  boot breakpoint stepped over")
-        if n_loads > 25 and storm_resets < 2:
-            print("  storm stuck - applying the reset escape")
-            with open(os.path.join(RIG, "cmd"), "w") as f:
-                f.write("reset\n")
-            storm_resets += 1
-            time.sleep(6)
+        # the storm self-heals (measured: ~14 retries then the fallback);
+        # a reset here would also kill any intentional hold - no escape.
         if len(names) >= 40:
             session_ready = True
             break
