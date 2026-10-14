@@ -179,6 +179,7 @@ def handle(kd, ptype, bcount, pid, cksum, data):
             log("*** STATE CHANGE %#x pid=%#x - HOLDING (machine frozen) ***" % (newstate, pid))
             for j in range(0, len(data), 16):
                 log("  %04x  %s" % (j, data[j:j+16].hex(" ")))
+            captor_catch(kd, newstate, pid, data)
             if len(data) > 0x34 and struct.unpack_from("<I", data, 0x20)[0] == 0x80000003:
                 exc_addr = struct.unpack_from("<Q", data, 0x30)[0]
                 ntbase = getattr(kd, "ntbase", None)
@@ -329,6 +330,56 @@ def manip_body(api, u_bytes=b""):
     body = struct.pack("<IHHI4x", api, 0, 0, 0)
     body += u_bytes + b"\x00" * max(0, MANIPULATE_SIZE - len(body) - len(u_bytes))
     return body
+
+def resolve_addr(ntbase, mods, addr):
+    """Name an address against this boot's module map (plan/0006 captor).
+
+    The module whose base is the HIGHEST not above the address wins: a
+    first-match over the ascending list lets a large gap before the next
+    module swallow a later module's range (the selfcheck's kdcom case)."""
+    if ntbase and 0 <= addr - ntbase < 0x600000:
+        return "ntoskrnl+0x%x" % (addr - ntbase)
+    for b, n in sorted(mods, reverse=True):
+        if b <= addr:
+            return "%s+0x%x" % (n.split("\\")[-1], addr - b)
+    return "???"
+
+
+def module_map():
+    """Unique (base, name) pairs from this boot's module-load lines."""
+    mods = []
+    try:
+        for line in open(os.path.join(RIG, "kdc-live.log"), errors="replace"):
+            m = re.search(r"MODULE LOAD.*base=(0x[0-9a-f]+) name=(\S+)", line)
+            if m:
+                b, n = int(m.group(1), 16), m.group(2)
+                if not any(x[1] == n for x in mods):
+                    mods.append((b, n))
+    except OSError:
+        pass
+    mods.sort()
+    return mods
+
+
+def captor_catch(kd, newstate, pid, data):
+    """plan/0006 #assert-captor: name every break - the exception code, the
+    address, and the owning module. Appends to work/captor-catches.log."""
+    if len(data) < 0x38:
+        return
+    exc = struct.unpack_from("<I", data, 0x20)[0]
+    addr = struct.unpack_from("<Q", data, 0x30)[0]
+    if not addr:
+        return
+    where = resolve_addr(getattr(kd, "ntbase", None), module_map(), addr)
+    line = "catch: state=%#x pid=%#x exc=%#x addr=%#x at %s" % (
+        newstate, pid, exc, addr, where)
+    log("    CAPTOR " + line)
+    try:
+        with open(os.path.join(RIG, "work", "captor-catches.log"), "a") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+
 
 def poll_cmd(kd):
     # one-shot command file: "version" | "read <hexaddr> <hexlen>" | "go" ...
