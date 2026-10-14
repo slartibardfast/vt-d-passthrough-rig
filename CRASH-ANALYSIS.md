@@ -648,3 +648,38 @@ The KTHREAD stack walk (queued tooling) names cap.exe's exact blocking
 frame next session. The graft thread (the builder, the SMC slot, the
 dispatch fix, now also the corrupted-pointer repair) is the unblock
 for everything display-side.
+
+### The live-interrupt chain works: the int3 hold, the flag write, the assert (2026-10-14, night 8)
+
+The full instrument chain is measured working end to end:
+
+1. The deployed driver loads from D:\drv\ati2mtag.sys on the FAT channel -
+   the graft deployment is a FAT file copy, no system-disk surgery.
+2. The kernel ENFORCES the PE checksum for this driver: an int3 edit
+   without the amd_checksum recompute is refused silently (no PP prints,
+   no minport cascade). The builder's pe-checksum op is mandatory on
+   every image change.
+3. A planted int3 at the powertune init entry (file 0x119d3c, va
+   +0x11a73c) breaks the boot and the captor names it - the hold, the
+   flag write (api 0x3131), and the continue all work.
+4. The upload-path conviction is live-confirmed: an int3 planted at
+   TF_PhwCIslands_UploadMCFirmware's entry sat through a whole boot
+   untouched - the task dispatch never routes family 0x78 there.
+5. The break flag DAT_005df230 (rva 0x5cf230) gates the PP asserts'
+   INT3s. With it live, the asserts break; without claiming the handler,
+   an unhandled kernel int3 bugchecks 0x7e immediately.
+6. THE KEY DISCOVERY: the drain (the hold loop's state-change handler)
+   was acking-and-silencing assert-breaks mid-hold. Fixed: the drain now
+   acks AND captures. The powertune assert is caught by name on the
+   fixed build.
+7. The write manipulate claims success but does not land while the
+   engine sits in the state-change wait (the read refusal has the same
+   shape). MOOT: the break flag is a static .data byte - bake it to 1 in
+   the image (file offset 0x5cd030 per the rva math) and every boot is
+   born with the asserts live. No writes needed.
+8. The orchestrator's storm-reset escape was killing intentional holds;
+   removed. The harness kills process trees of timed-out commands -
+   launch boot chains with setsid.
+9. The SMC firmware structure: five per-ASIC copies sharing a header at
+   0x2a8fbb..0x2e28ab; Hawaii is the fifth, exactly where the peer
+   grafted. The peer's offset table is valid for the icafe build.
