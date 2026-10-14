@@ -532,3 +532,33 @@ The end-to-end tooling is DONE and proven on real hardware:
 - The rig state: frozen at the break (the daemon polling, hold-all set),
   the tap corpus in /tmp/opencode/tap.log, the donor packages in
   /tmp/opencode/donors. The read driver: walk.py (chunked, 16B law).
+
+### The degradation discovery - the walk differential (2026-10-14, night 4)
+
+The process-walk, repeated across hold/probe cycles, is a degradation
+detector - and it caught the build dying by inches:
+
+- 23:53 walk: 17 processes (the full session: winlogon, services,
+  lsass, the svchost fleet, spoolsv, wmiprvse, alg, explorer, wscntfy).
+- 00:4x walk: 9 processes (alg, explorer, wscntfy GONE).
+- 00:5x walk: 6 processes (the svchost fleet collapsed to one, spoolsv
+  and wmiprvse gone).
+
+The black-screen build is not a stable system with a display problem:
+its failure CASCADES - services die progressively while the machine
+runs. explorer.exe itself died during the probe window. The input
+probe (ctrl-shift-esc -> taskmgr) produced nothing: either the input
+does not reach winlogon or winlogon is too degraded to answer.
+
+Also measured: the read cap refined - the engine CLAMPS every read to
+16 bytes (no error, just min(requested,16)); the old c0000001 errors
+were the poisoned session's state, not a size refusal. The hold loop's
+drain works under load (the reads flowed straight through the
+state-change re-send spam).
+
+Tooling debts queued: a readbatch command (N reads per cmd-file round
+trip), the walk-diff as a first-class command, the boot orchestrator.
+
+The rig state: held at the 00:49 break, the system degraded to 6
+processes. The System eventlog on the next boot is now the primary
+evidence: the service-failure records will name what killed the fleet.
