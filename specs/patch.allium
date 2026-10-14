@@ -125,6 +125,18 @@ rule ApplyComplete {
     ensures: Output.digest_bound(base: base, value: sha256_of(output_bytes))
 }
 
+rule ApplyPeChecksum {
+    when: manifest: Manifest.status = started
+    requires: next_op_is_pe_checksum(manifest)
+
+    ensures: Output.pe_checksum_recomputed(base: the_base)
+    @guidance
+        -- The PE optional-header checksum must be recomputed after any byte
+        -- changes: the loader validates it for kernel drivers. The op sums
+        -- the image as 16-bit words with the carry folded, skips the
+        -- checksum field itself, folds finally, and adds the file length.
+}
+
 ------------------------------------------------------------
 -- Invariants
 ------------------------------------------------------------
@@ -156,6 +168,13 @@ invariant DigestBinds {
     for base in BaseImages:
         base.status = applied
             implies the_digest(base) = sha256(output_bytes(base))
+}
+
+invariant PeChecksumValid {
+    -- After a pe-checksum op, the stored checksum equals the recomputed one
+    -- for the emitted image: the loader's validation would pass.
+    for o in Output:
+        o.checksum_recomputed implies stored_checksum(o) = pe_checksum(output_bytes(o))
 }
 
 ------------------------------------------------------------

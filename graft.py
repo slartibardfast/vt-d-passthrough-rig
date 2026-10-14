@@ -18,6 +18,7 @@ The builder never resizes the image. Any range violation is a loud
 rejection (GraftRangeError) with no output written.
 """
 import hashlib
+import struct
 import os
 import json
 import sys
@@ -31,6 +32,36 @@ class GraftEmptyManifestError(Exception):
     """A manifest with no operations is rejected, not silently applied."""
 
 
+def pe_checksum(data):
+    """The PE checksum, amd_checksum form (stagec.py) - the algorithm the
+    campaign's Stage-E build used and the XP loader accepted: sum all 16-bit
+    words (the checksum field zeroed), add the odd tail byte, fold the carry
+    at the end, then add the file length as an unmasked 32-bit term."""
+    d = bytearray(data)
+    pe = struct.unpack_from("<I", d, 0x3C)[0]
+    csum_off = pe + 88                       # pe + 24 + 0x40: PE32+ CheckSum
+    d[csum_off:csum_off + 4] = b"\0\0\0\0"
+    n = len(d)
+    u = 0
+    for i in range(n // 2):
+        u += struct.unpack_from("<H", d, i * 2)[0]
+    if n % 2:
+        u += d[-1]
+    while u >> 16:
+        u = (u & 0xFFFF) + (u >> 16)
+    u = (u + n) & 0xFFFFFFFF
+    return u
+
+
+def recompute_pe_checksum(out):
+    """Write the recomputed checksum into the image's optional header."""
+    out = bytearray(out)
+    pe = struct.unpack_from("<I", out, 0x3C)[0]
+    csum = pe_checksum(bytes(out))
+    struct.pack_into("<I", out, pe + 88, csum)
+    return bytes(out)
+
+
 def apply_manifest(base, manifest, donors):
     """Apply the manifest to base bytes; return the patched bytes.
 
@@ -41,6 +72,9 @@ def apply_manifest(base, manifest, donors):
         raise GraftEmptyManifestError("manifest carries no operations")
     out = bytearray(base)
     for i, op in enumerate(ops):
+        if op["op"] == "pe-checksum":
+            out = bytearray(recompute_pe_checksum(bytes(out)))
+            continue
         at = op["at"]
         if op["op"] == "fill":
             size = op["size"]

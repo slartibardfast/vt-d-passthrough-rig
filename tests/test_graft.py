@@ -169,3 +169,39 @@ def test_no_state_carryover(base, donor):
         {"ops": [{"op": "patch", "at": 0x200, "bytes": "90"}]},
         {"donor.bin": donor})
     assert len(out) == len(base) and out[0x200] == 0x90
+
+
+def test_pe_checksum_recomputed(base, donor):
+    """The pe-checksum op writes the amd-form checksum into the header."""
+    out = graft.apply_manifest(
+        base,
+        {"ops": [{"op": "pe-checksum"}]},
+        {"donor.bin": donor})
+    pe = struct.unpack_from("<I", out, 0x3C)[0]
+    stored = struct.unpack_from("<I", out, pe + 88)[0]
+    assert stored == graft.pe_checksum(out)
+    assert stored != 0
+
+
+def test_pe_checksum_changes_on_corruption(base, donor):
+    """A corrupted byte changes the recomputed checksum: the checksum binds
+    the image content (the loader's validation would catch the edit)."""
+    m = {"ops": [{"op": "pe-checksum"}]}
+    d = {"donor.bin": donor}
+    def csum(img):
+        pe = struct.unpack_from("<I", img, 0x3C)[0]
+        return struct.unpack_from("<I", img, pe + 88)[0]
+    c1 = csum(graft.apply_manifest(base, m, d))
+    corrupted = bytearray(base)
+    corrupted[0x300] ^= 0xFF
+    c2 = csum(graft.apply_manifest(bytes(corrupted), m, d))
+    assert c1 != c2
+
+
+def test_pe_checksum_idempotent(base, donor):
+    """Two checksum passes produce the same image (the op is idempotent)."""
+    m = {"ops": [{"op": "pe-checksum"}]}
+    d = {"donor.bin": donor}
+    once = graft.apply_manifest(base, m, d)
+    twice = graft.apply_manifest(once, m, d)
+    assert once == twice

@@ -102,3 +102,18 @@ test_no_state_carryover() {
     # exercises apply_manifest - a rejected call leaves no state behind
     "$VENV_PYTHON" -m pytest tests/test_graft.py::test_no_state_carryover -q
 }
+
+test_pe_checksum_recomputed() {
+    # exercises apply_manifest,recompute_pe_checksum - the op writes the amd-form checksum
+    "$VENV_PYTHON" -m pytest tests/test_graft.py::test_pe_checksum_recomputed -q
+}
+
+test_pe_checksum_changes_on_corruption() {
+    # exercises pe_checksum - the checksum binds the image content
+    "$VENV_PYTHON" -m pytest tests/test_graft.py::test_pe_checksum_changes_on_corruption -q
+}
+
+test_pe_checksum_idempotent() {
+    # exercises recompute_pe_checksum - the op is idempotent
+    "$VENV_PYTHON" -m pytest tests/test_graft.py::test_pe_checksum_idempotent -q
+}

@@ -55,3 +55,8 @@ invariant.DigestBinds                   => test:test_digest_binds exercises=dige
 # --- Surfaces ---
 surface-actor.GraftBuilder              => structural
 surface-provides.GraftBuilder           => test:test_cli_roundtrip exercises=main
+
+# --- ApplyPeChecksum (the amd-form recompute, loader-validated via stageE) ---
+rule-success.ApplyPeChecksum           => test:test_pe_checksum_recomputed exercises=recompute_pe_checksum
+rule-failure.ApplyPeChecksum.1         => test:test_pe_checksum_idempotent exercises=recompute_pe_checksum
+invariant.PeChecksumValid              => test:test_pe_checksum_changes_on_corruption exercises=pe_checksum
