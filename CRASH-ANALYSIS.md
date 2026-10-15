@@ -840,3 +840,47 @@ Measured this session, each one the hard way:
    lost): measured h1 2GB→1.27GB, h2 2.1GB→0.69GB.
 7. **ctx result packet never follows the ack** (daemon issue,
    uninvestigated) — the QEMU dump route makes it non-blocking.
+
+## Night 2026-10-15: the decrypted image is carved
+
+The master instrument exists: `work/dumps/ati2mtag-live.sys` (8,896,512
+bytes, sha256 eabadb3a61355125..., 18 real ATI sections: .text,
+.rdata, .data, PAGE_DAL/CPC/COM/INI/DDC/RO/RW). "ati2mtag" at image
+offset 0x180bc5, "Radeon" at 0x17d328. Carved from
+`dump-hold1.bin` (3GB pmemsave taken at a QEMU stop, PA == file
+offset) through the live page tables.
+
+Laws of the carve (each bought with an hour):
+
+1. **The live base comes from the announce log.** The MODULE LOAD line
+   `ati2mtag.sys base=0xfffffadfaaf89000` was in the log all along;
+   a `head -2` on the grep hid it behind the FILE_IO lines. Read the
+   whole grep before theorizing.
+2. **x64 PTE masks**: frame = bits 12-51, mask 0x000FFFFFFFFFF000. The
+   NX bit (63) left in the mask corrupts every pa from a non-executable
+   page (measured: base PTE = 0x80000000ba104000).
+3. **Page tables have 512 entries.** A range(0x100) walk sees only the
+   user half of every table - the kernel half silently vanishes.
+4. **Big pool allocations ride 2MB PDEs.** Handle the PS bit at PDE
+   level or 8MB images evaporate.
+5. **Packed-file offsets do NOT carry into the live image**: the
+   packer rewrites the section table; 0x2E28AB (SMC) and 0x5cd030
+   (flag) are file-layout offsets for graft.py on the packed file only.
+   The live SMC slot is runtime-modified anyway.
+6. **Ghost copies exist**: freed image copies stay in RAM as unmapped
+   pages and pass the physical PE scan. Validate a candidate by
+   translating its VA, not by its bytes.
+7. **The x-vga wall was a module parameter, not firmware.** vfio-pci
+   loaded with disable_vga=Y (measured in
+   /sys/module/vfio_pci/parameters/disable_vga) despite modprobe.d
+   saying =0; has_vga never gets set and QEMU rejects x-vga. Fix:
+   unbind both 290x functions, `modprobe -r vfio_pci`,
+   `modprobe vfio_pci disable_vga=0 ids=1002:67b0,1002:aac8`, rebind -
+   no reboot. The earlier NVRAM/primary-display theory is RETIRED.
+   Provenance of the Y: still open - inspect the initramfs copy of the
+   conf and the zen kernel's parameter default.
+8. **Open issue**: after the boot completed (102 modules, ati2mtag +
+   win32k + dxg loaded), the KD channel went deaf - knock breakins and
+   a pread got zero response, while the guest stayed alive at an idle
+   pool RIP (QEMU monitor). Unexplained; investigate before the next
+   assert session.
