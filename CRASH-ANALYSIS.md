@@ -884,3 +884,25 @@ Laws of the carve (each bought with an hour):
    a pread got zero response, while the guest stayed alive at an idle
    pool RIP (QEMU monitor). Unexplained; investigate before the next
    assert session.
+
+## Durable fix (2026-10-15): vfio_pci.disable_vga at the kernel cmdline
+
+The boot path is a UKI: systemd-boot boots
+EFI/Linux/<machine-id>-<ver>.efi, whose cmdline is baked from
+/etc/kernel/cmdline at UKI build time, plus the sidecar
+EFI/Linux/arch-linux.cmdline that systemd-stub appends. Both now carry
+`vfio_pci.disable_vga=0`:
+
+- /etc/kernel/cmdline - the source every kernel upgrade re-bakes.
+- /boot/EFI/Linux/arch-linux.cmdline - covers the current UKI without a
+  rebuild. Backup: arch-linux.cmdline.bak-20261015.
+
+The kernel applies module parameters from the cmdline itself at load,
+bypassing every userspace modprobe path (busybox early userspace,
+initramfs conf copies, udev timing) - which is where the =0 conf was
+being lost. The mystery of HOW it was lost stays open (the baked
+initramfs conf reads =0 and correct); the cmdline closes the hole
+regardless of the answer. Boot-side, boot.py now self-heals: the
+preflight reads the parameter, and on Y reloads vfio_pci with
+disable_vga=0 (unbind both 290x functions, modprobe -r, modprobe with
+ids=1002:67b0,1002:aac8) and re-verifies before QEMU launches.

@@ -46,11 +46,41 @@ def main():
     if hold:
         open(os.path.join(RIG, "hold-all"), "w").close()
 
+    self_heal_vfio_vga()
+
     subprocess.Popen("nohup python3 kdc.py >> /tmp/opencode/kdc-dbg.log 2>&1 &",
                      shell=True, cwd=RIG)
     subprocess.Popen("nohup ./run-driver.sh > /tmp/opencode/run-driver.log 2>&1 &",
                      shell=True, cwd=RIG)
     print("boot launched; watching...")
+
+
+def self_heal_vfio_vga():
+    """QEMU x-vga=on needs vfio-pci loaded with disable_vga=N. The param has
+    been observed Y after boots whose early load ignored the modprobe.d
+    conf; the kernel cmdline now carries vfio_pci.disable_vga=0, and this
+    preflight re-applies the reload if anything regresses. Returns only
+    after the parameter reads N (or silently when the module is absent -
+    no card, no boot anyway)."""
+    p = "/sys/module/vfio_pci/parameters/disable_vga"
+    try:
+        cur = open(p).read().strip()
+    except OSError:
+        return
+    if cur == "N":
+        return
+    print("  vfio_pci.disable_vga=Y - reloading the module (x-vga needs N)")
+    for fn in ("0000:02:00.0", "0000:02:00.1"):
+        subprocess.run(["sudo", "tee", "/sys/bus/pci/drivers/vfio-pci/unbind"],
+                       input=fn.encode(), capture_output=True)
+    subprocess.run(["sudo", "modprobe", "-r", "vfio_pci"], capture_output=True)
+    subprocess.run(["sudo", "modprobe", "vfio_pci", "disable_vga=0",
+                    "ids=1002:67b0,1002:aac8"], capture_output=True)
+    cur = open(p).read().strip()
+    print(f"  vfio_pci.disable_vga now {cur}")
+    if cur != "N":
+        print("  !! still Y - x-vga will fail; check the kernel cmdline")
+
 
     t0 = time.time()
     storm_resets = 0
