@@ -25,34 +25,8 @@ def log_lines(pattern):
         return []
 
 
-def main():
-    hold = "--hold" in sys.argv
-    # the clean slate
-    sh("pkill", "-xf", "python3 kdc.py")
-    time.sleep(1)
-    sh("pkill", "-x", "qemu-system-x86")
-    # the VFIO group teardown lags the process exit - wait until it frees,
-    # or the new QEMU fails with "Device or resource busy" (measured)
-    for _ in range(30):
-        r = sh("sudo", "fuser", "-v", "/dev/vfio/17")
-        if not (r.stdout.strip() or r.stderr.strip()):
-            break
-        time.sleep(1)
-    time.sleep(1)
-    for f in ("kdc-live.log", "hold-release", "send-reset"):
-        p = os.path.join(RIG, f)
-        if os.path.exists(p):
-            os.remove(p)
-    if hold:
-        open(os.path.join(RIG, "hold-all"), "w").close()
-
-    self_heal_vfio_vga()
-
-    subprocess.Popen("nohup python3 kdc.py >> /tmp/opencode/kdc-dbg.log 2>&1 &",
-                     shell=True, cwd=RIG)
-    subprocess.Popen("nohup ./run-driver.sh > /tmp/opencode/run-driver.log 2>&1 &",
-                     shell=True, cwd=RIG)
-    print("boot launched; watching...")
+def ensure_tmpdirs():
+    os.makedirs("/tmp/opencode", exist_ok=True)
 
 
 def self_heal_vfio_vga():
@@ -82,10 +56,38 @@ def self_heal_vfio_vga():
         print("  !! still Y - x-vga will fail; check the kernel cmdline")
 
 
+def main():
+    hold = "--hold" in sys.argv
+    # the clean slate
+    sh("pkill", "-xf", "python3 kdc.py")
+    time.sleep(1)
+    sh("pkill", "-x", "qemu-system-x86")
+    # the VFIO group teardown lags the process exit - wait until it frees,
+    # or the new QEMU fails with "Device or resource busy" (measured)
+    for _ in range(30):
+        r = sh("sudo", "fuser", "-v", "/dev/vfio/17")
+        if not (r.stdout.strip() or r.stderr.strip()):
+            break
+        time.sleep(1)
+    time.sleep(1)
+    for f in ("kdc-live.log", "hold-release", "send-reset"):
+        p = os.path.join(RIG, f)
+        if os.path.exists(p):
+            os.remove(p)
+    if hold:
+        open(os.path.join(RIG, "hold-all"), "w").close()
+
+    ensure_tmpdirs()
+    self_heal_vfio_vga()
+
+    subprocess.Popen("nohup python3 kdc.py >> /tmp/opencode/kdc-dbg.log 2>&1 &",
+                     shell=True, cwd=RIG)
+    subprocess.Popen("nohup ./run-driver.sh > /tmp/opencode/run-driver.log 2>&1 &",
+                     shell=True, cwd=RIG)
+    print("boot launched; watching...")
+
     t0 = time.time()
-    storm_resets = 0
     session_ready = False
-    boot_bp_released = False
     while time.time() - t0 < 420:
         time.sleep(10)
         loads = [l for l in log_lines("ntoskrnl")]
@@ -110,7 +112,6 @@ def self_heal_vfio_vga():
             # re-executes it forever (measured). Step over instead.
             with open(os.path.join(RIG, "cmd"), "w") as f:
                 f.write("step\n")
-            boot_bp_released = True
             print("  boot breakpoint stepped over")
         # the storm self-heals (measured: ~14 retries then the fallback);
         # a reset here would also kill any intentional hold - no escape.
