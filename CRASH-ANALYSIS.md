@@ -906,3 +906,20 @@ regardless of the answer. Boot-side, boot.py now self-heals: the
 preflight reads the parameter, and on Y reloads vfio_pci with
 disable_vga=0 (unbind both 290x functions, modprobe -r, modprobe with
 ids=1002:67b0,1002:aac8) and re-verifies before QEMU launches.
+
+## Correction (2026-10-16): the sidecar was never read; the UKI is re-baked
+
+The reboot test failed with disable_vga=Y and /proc/cmdline missing the
+param: L had appended to EFI/Linux/arch-linux.cmdline, but the boot
+entry is the machine-id-named UKI
+a9d7f029...-7.2.8-zen1-2-zen.efi - systemd-stub only reads addons named
+after the UKI itself, and systemd 260 dropped plain-text .cmdline
+sidecars anyway. The live cmdline matched /etc/kernel/cmdline exactly,
+which identified the baked-cmdline path.
+
+The durable fix, verified in the artifact: `sudo kernel-install add-all`
+rebuilds the UKI from /etc/kernel/cmdline (uki.conf carries no CmdLine
+override; sbctl signs). The rebuilt UKI's baked cmdline now ends
+`... vfio_pci.disable_vga=0 systemd.machine_id=...` - read back from
+the .efi with strings. Kernel upgrades re-run kernel-install, so the
+param survives upgrades by construction.
