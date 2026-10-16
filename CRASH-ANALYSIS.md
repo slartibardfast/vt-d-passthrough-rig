@@ -948,3 +948,34 @@ param survives upgrades by construction.
   (RIP=0xfffff8000104e7c0, the break handler).
 - /tmp is tmpfs: a host reboot wipes /tmp/opencode (daemon logs, the
   QEMU socket dir). boot.py now creates it at boot start.
+
+## Upgrade-survival audit (2026-10-16): pacman -Syu cannot take the work
+
+Requirement from the operator: the work must survive pacman -Syu.
+Audited piece by piece; findings:
+
+- /etc/kernel/cmdline, /etc/kernel/uki.conf, the vfio modprobe conf,
+  and the ESP sidecar are all UNOWNED by pacman - upgrades never touch
+  them (checked with pacman -Qo).
+- The UKI rebuild path: 60-ukify.install sets uname from the
+  kernel-install arguments (line 243) and the cmdline from
+  /etc/kernel/cmdline (line 252) - the uki.conf Uname pin is inert for
+  kernel-install builds. A kernel upgrade re-runs kernel-install add
+  via the alpm hook, re-bakes the cmdline (with vfio_pci.disable_vga=0)
+  into the new UKI, and sbctl signs it. Survives by construction.
+- MODULES=(vfio_pci vfio_iommu_type1) in mkinitcpio.conf: the early
+  vfio load survives kernel upgrades (modconf bakes the modprobe conf
+  into every new initramfs).
+- sudo is passwordless (sudo -n OK) - boot.py's unattended preflight
+  works.
+- **Fixed the loader default**: loader.conf said
+  `default arch-linux-lts.conf` while the machine runs zen - the zen
+  boot depended on a manual menu pick inside 3 seconds (the accidental
+  working the operator called out). Now `default @saved`: the last
+  manual selection persists across upgrades. Backup:
+  loader.conf.bak-20261016.
+- Accepted upstream risks (not ours to pin): QEMU updates could change
+  vfio/x-vga behavior; systemd updates could change stub addon rules.
+  Both are caught by boot.py's preflight + the operator's next boot.
+- Still open: the writer of the observed disable_vga=Y. All identified
+  mechanisms force N; three independent layers now force N regardless.
