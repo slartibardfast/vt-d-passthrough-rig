@@ -923,3 +923,28 @@ override; sbctl signs). The rebuilt UKI's baked cmdline now ends
 `... vfio_pci.disable_vga=0 systemd.machine_id=...` - read back from
 the .efi with strings. Kernel upgrades re-run kernel-install, so the
 param survives upgrades by construction.
+
+## Night 2026-10-16: the reboot test, the preflight's first save
+
+- The reboot exposed L's own sidecar error (wrong filename - the UKI is
+  machine-id-named; arch-linux.cmdline is a different image's addon).
+  Corrected the DURABLE layer: kernel-install add-all re-baked the UKI
+  from /etc/kernel/cmdline, sbctl signed, and the param is verifiable in
+  the artifact itself (strings on the .efi shows
+  `... vfio_pci.disable_vga=0 systemd.machine_id=...`). That UKI has
+  NOT been boot-tested yet - the next host reboot is its test.
+- The preflight's first save: this boot started with disable_vga=Y, the
+  preflight detected it, reloaded the module, verified N, and the boot
+  went green (session_ready=True abandoned=False, 113 modules, ati2mtag
+  at 0xfffffadfaaf49000). Self-healing works as designed.
+- **The deafness correlates with boot completeness**: yesterday's 102-
+  module boot went deaf to breakins; today's 113-module boot (full
+  set) caught the knock instantly at +33s post-storm. The other
+  suspect from yesterday remains the mid-session daemon kill
+  (kdread.sh). Open question, narrower now.
+- The hold-dump procedure ran clean end to end: stop -> info registers
+  (CR3=0x372000) -> pmemsave 0 0xc0000000 -> sync -> size-verified
+  3221225472 -> cont -> go. dump-hold2.bin holds the frozen catch state
+  (RIP=0xfffff8000104e7c0, the break handler).
+- /tmp is tmpfs: a host reboot wipes /tmp/opencode (daemon logs, the
+  QEMU socket dir). boot.py now creates it at boot start.
