@@ -16,9 +16,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import szdd  # noqa: E402
 
-DONOR_SY = ("/tmp/opencode/donors/vistapack/AMD Catalyst 15.6 Beta for "
-            "Windows Vista/Packages/Drivers/Display/W76A_INF/B185615/atikmdag.sy_")
-DONOR_SYS = "/tmp/opencode/donors/vista156-x64-atikmdag.sys"
+DONOR_SY = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "fixtures", "amdave32.dl_")
+DONOR_SYS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "fixtures", "amdave32.dll")
 
 
 def _has_donor():
