@@ -25,7 +25,7 @@ jobs:
         run: |
           python -m venv venv
           ./venv/bin/pip install hypothesis pytest
-          ./venv/bin/python -m pytest tests/test_szdd.py -q
+          ./venv/bin/python -m pytest tests/ -q
       - name: obligations
         run: |
           cargo install --git https://github.com/connollydavid/host-lifecycle host-lifecycle

@@ -75,7 +75,7 @@ def apply_manifest(base, manifest, donors):
         if op["op"] == "pe-checksum":
             out = bytearray(recompute_pe_checksum(bytes(out)))
             continue
-        at = int(op["at"], 0)   # accepts 1154364 or "0x119d3c"
+        at = int(str(op["at"]), 0)   # accepts 1042612, "1154364" or "0x119d3c"
         if op["op"] == "fill":
             size = op["size"]
             if at < 0 or size < 0 or at + size > len(out):
