@@ -9,14 +9,18 @@ jobs:
         with: { python-version: "3.11" }
       - name: install the toolchain
         run: |
-          cargo install allium-cli
+          # 3.6.1 pinned: `allium plan` takes spec FILES (a directory arg is
+          # os error 21); check/analyse tolerate directories, plan does not.
+          cargo install allium-cli --version 3.6.1 --locked
           pip install hypothesis pytest
       - name: check
         run: allium check specs
       - name: analyse
         run: allium analyse specs
       - name: plan
-        run: allium plan specs
+        run: |
+          allium plan specs/szdd.allium
+          allium plan specs/patch.allium
       - name: tests
         run: |
           python -m venv venv
