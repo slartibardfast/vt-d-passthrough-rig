@@ -459,7 +459,15 @@ def main():
         # break in - it never transmits first (measured: the captured boot's packets
         # were responses to kd.exe's break-in). Knock every few seconds until the
         # target answers, then stop knocking.
+        # The knocker gates on the do-knock file: the passive acks flip the
+        # id pair on their own, and mid-hold breakin spam poisons holds
+        # (measured 2026-10-14/15; the earlier "boot-start poison" reading
+        # was wrong - the flip works without resets). The manual knock is
+        # for mid-session re-attach and deliberate breaks only.
         answered = threading.Event()
+        if not os.path.exists(os.path.join(RIG, "do-knock")):
+            answered.set()
+            log("knocker: disabled (no do-knock file) - the boot announces, we listen")
 
         def knocker():
             # kd.exe's connect flow: RESET control packets until the target
