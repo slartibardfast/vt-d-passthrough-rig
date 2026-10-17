@@ -979,3 +979,13 @@ Audited piece by piece; findings:
   Both are caught by boot.py's preflight + the operator's next boot.
 - Still open: the writer of the observed disable_vga=Y. All identified
   mechanisms force N; three independent layers now force N regardless.
+
+## 2026-10-17: the cmdline fix verified natively
+
+Fresh host boot on the re-baked UKI: /proc/cmdline carries
+vfio_pci.disable_vga=0, /sys/module/vfio_pci/parameters/disable_vga
+reads N with NO preflight run (boot.py never launched) - the kernel
+applied the parameter at module load, exactly as the cmdline mechanism
+promises. The disable_vga anomaly is now fully contained: kernel
+default N, conf N, cmdline N, preflight N. Layer 2 proven by
+construction. The rig boot + REA session follows.
