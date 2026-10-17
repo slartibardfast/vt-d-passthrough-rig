@@ -989,3 +989,26 @@ applied the parameter at module load, exactly as the cmdline mechanism
 promises. The disable_vga anomaly is now fully contained: kernel
 default N, conf N, cmdline N, preflight N. Layer 2 proven by
 construction. The rig boot + REA session follows.
+
+## REA session opened (2026-10-17): the packed->live anchor map
+
+The carved image ingested into Ghidra (4,406 functions) via an analysis
+copy with the EXCEPTION data-directory entry zeroed - the loader chokes
+on the snapshot's .pdata markup ("Function entryPoint may not be created
+on defined data"). The evidence copy is untouched.
+
+The packer re-lays sections, so packed-file offsets shift per region in
+the live image. Measured anchor map (packed -> live, delta):
+
+- device-ID switch  0x119D4F -> 0x11A74F  (+0xA00)   plaintext
+- crash family      0x1A9554 -> 0x1AAD54  (+0x1800)  plaintext
+- dispatch blob     0x353BB0 -> 0x355DB0  (+0x2200)  plaintext
+- SMC slots         0x2E28AB -> 0x2AB1BB (+3 copies at 0x2B956B,
+                    0x2C7A5B, 0x2D618B) - the per-ASIC slot copies;
+                    the Hawaii (5th) slot is the one whose content
+                    differs (the graft target)
+- flag byte         0x5CD030 -> NOT FOUND - encrypted region
+
+work/anchor-map.py maps any packed offset by content search. The graft
+offsets stay valid against the PACKED file (graft.py's world); the live
+mapping is for reading the real code.
