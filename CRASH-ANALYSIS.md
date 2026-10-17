@@ -1012,3 +1012,18 @@ the live image. Measured anchor map (packed -> live, delta):
 work/anchor-map.py maps any packed offset by content search. The graft
 offsets stay valid against the PACKED file (graft.py's world); the live
 mapping is for reading the real code.
+
+## The donor component law: WB_INF vs WB6A_INF
+
+The 14.4-era packages carry two distinct atikmdag binaries under the same
+B171094 build directory name. WB6A_INF/B171094 (15,376,384 bytes expanded,
+sha256 119c8549...) is byte-identical across the desktop and mobility
+packages - a shared Win8.1-unified binary. WB_INF/B171094 (13,515,264
+bytes, sha256 afdff78d...) exists only in the desktop package and is the
+peer's donor component. Both hold the Hawaii SMC slot at file offset
+0xBFFA13, 60,574 bytes, one occurrence each - but with different content:
+WB_INF carves 100355ef..., WB6A carves 25b10f61.... A provenance check
+that verifies offset/length/version/date alone cannot tell these apart;
+the INF directory name is the discriminator. The committed donor is now
+the desktop WB_INF blob (100355ef...), matching the campaign's original
+recollection exactly.
