@@ -1,0 +1,5 @@
+{"ops": [
+  {"op": "patch", "at": "0x8EDF5", "bytes": "4c8d2d2c3f2600"},
+  {"op": "patch", "at": "0xA9BCC", "bytes": "4c89e89090"},
+  {"op": "patch", "at": "0xA9BD1", "bytes": "488d4008"}
+]}

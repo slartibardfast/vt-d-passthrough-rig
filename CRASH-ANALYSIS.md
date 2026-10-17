@@ -1027,3 +1027,24 @@ that verifies offset/length/version/date alone cannot tell these apart;
 the INF directory name is the discriminator. The committed donor is now
 the desktop WB_INF blob (100355ef...), matching the campaign's original
 recollection exactly.
+
+## The descriptor-read redirect, found and cut (2026-10-17, plan/0007 #descriptor-read)
+
+The peer's x86 blocker ("find the equivalent of the 0xB1AC8 patch") is
+solved on x64, measured rather than pattern-guessed. The descriptor walk
+lives at packed 0x8EDF5 (mov r13,[rdi+0x80]; count read [r13] is the
+faulting instruction), its reader at packed 0xA9BC4 (obj+8 -> [ptr+idx*4]),
+and the reader's ONLY caller is the walk (rel32 scan, both images). The
+family check that misroutes Hawaii is the device-ID switch in FUN_0012b13c
+(live 0x12B13C): cases 0x6640-0x665d only, no 0x67B0 - Hawaii falls to the
+stock table plus the Invalid_vddc assert. The peer's donor-relative anchor
+transfers exactly: their x86 redirect landed at donor+0xEC7D, and our
+committed donor's tail there is a count table with count=1 - the {count;
+entries} shape this walk reads. The x64 redirect is three same-length
+patches (fixtures/graft/manifest-descriptor-redirect.json): the walk's
+pointer load becomes lea r13,[rip+X] onto Hawaii-slot+0xEC7D, and the
+reader's helper call + pointer dereference become mov rax,r13 / lea
+rax,[rax+8]. RIP-relative throughout - unlike the x86 patch, no .reloc
+entry is needed, and being load-base independent it is strictly safer.
+Dry-run diff: exactly 11 bytes, three ranges, nothing else (sha256
+967ccf9d...). Full detail: work/descriptor-read.md.
