@@ -13,6 +13,11 @@ work/
 # hashes recorded in plan/0003 stand in for them and the card re-dumps on demand.
 *.bin
 *.rom
+# Exceptions: the synthetic graft-builder fixtures are test data, not dumps
+# (1 KB class, round-trip inputs the tests need on every machine).
+!fixtures/graft/base.bin
+!fixtures/graft/donor.bin
+!fixtures/graft/expected-out.bin
 
 # Serial and monitor logs from a run, including a probe's own stdout.
 *.log
