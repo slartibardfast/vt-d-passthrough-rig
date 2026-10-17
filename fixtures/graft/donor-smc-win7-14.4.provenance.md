@@ -13,8 +13,10 @@ The desktop package, operator-acquired 2026-10-17 and placed at
 
 - Package: 14-4-win7-win8-win8.1-64-dd-ccc-whql.exe (295,347,968 bytes,
   NSIS-wrapped), sha256
-  e99b480c9f84db095e43c48c8ca307b16aa9244118e1ee4c222f8414ec0ba6b2;
-  banked as work/donors/14-4-desktop-win7-64.exe.
+  e99b480c9f84db095e43c48c8ca307b16aa9244118e1ee4c222f8414ec0ba6b2.
+  Durable: ~/xp64-corpus/drivers/14-4-win7-win8-win8.1-64-dd-ccc-whql.exe
+  (MANIFEST.tsv row, source=operator; the x32 sibling is banked beside
+  it). Working copy: work/donors/14-4-desktop-win7-64.exe.
 - Component: Packages/Drivers/Display/WB_INF/B171094/atikmdag.sy_
   (8,526,281 bytes, SZDD; expanded with the rig's szdd.py to 13,515,264
   bytes, PE-valid), sha256
@@ -43,10 +45,12 @@ which resolved the doubt outright.
 
 ## Re-acquisition recipe (if ever needed)
 
-Banked package: work/donors/14-4-desktop-win7-64.exe. 7z x the package;
-extract WB_INF/B171094/atikmdag.sy_; `python3 szdd.py <sy_> <sys>`; take
-the 60,574 bytes at 0xBFFA13. The web is no longer a source for this
-package: www2.ati.com 301s to a dead FAQ with no Wayback body (verified by
-CDX — every capture is a redirect or tombstone), TechSpot's file server
-404s, Guru3D's only mirror (ftp.nluug.nl) deleted it, and the Microsoft
-Update Catalog purged 14.100-era entries.
+Durable package: ~/xp64-corpus/drivers/14-4-win7-win8-win8.1-64-dd-ccc-whql.exe
+(hash-verified by the corpus manifest; the only copy with a living
+provenance chain — the operator delivered it 2026-10-17). 7z x the
+package; extract WB_INF/B171094/atikmdag.sy_; `python3 szdd.py <sy_>
+<sys>`; take the 60,574 bytes at 0xBFFA13. The web is no longer a source
+for this package: www2.ati.com 301s to a dead FAQ with no Wayback body
+(verified by CDX — every capture is a redirect or tombstone), TechSpot's
+file server 404s, Guru3D's only mirror (ftp.nluug.nl) deleted it, and the
+Microsoft Update Catalog purged 14.100-era entries.
