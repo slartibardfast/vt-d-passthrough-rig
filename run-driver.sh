@@ -40,10 +40,15 @@ rm -f "$LOG" "$MON"
 
 # The installer CD is deliberately not attached. Boot order c is the first hard disk, and
 # the guest has to come up on its own installed Windows for the driver to bind.
+# ACCEL selects the accelerator: the default kvm, or tcg for correctness when
+# the host kernel's KVM breaks the 290X option ROM (measured 2026-11-13: kernel
+# 7.2.15-zen KVM deadlocks the ATOM ROM's LOCK cmpxchg spin at 0xD016E on both
+# qemu 11.1.0 and 11.1.3; TCG clears it. CPU must be a TCG model when ACCEL=tcg,
+# e.g. CPU=max ACCEL=tcg ./run-driver.sh).
 qemu-system-x86_64 \
   -name xp64-driver \
-  -machine pc,accel=kvm,hpet=off \
-  -cpu host,-x2apic \
+  -machine pc,accel=${ACCEL:-kvm},hpet=off \
+  -cpu "${CPU:-host,-x2apic}" \
   -smp "${SMP:-4}" \
   -m 3072 \
   -rtc base=localtime \
