@@ -1,0 +1,11 @@
+{
+  "init_completed": [],
+  "assert_patterns": [
+    "(?i)(?:PowerPlay|\\bPP\\b).*assert|assert.*(?:PowerPlay|\\bPP\\b)"
+  ],
+  "failure_patterns": [
+    "(?i)Invalid ASIC family",
+    "(?i)PowerPlay uninitialization failed"
+  ],
+  "note": "No positive PP initialization marker is measured at this pin. Real boots remain INCONCLUSIVE until a measured marker is added and reviewed."
+}

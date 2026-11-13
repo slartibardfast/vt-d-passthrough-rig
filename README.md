@@ -2,13 +2,14 @@
 
 The QEMU harness that boots Windows XP x64 on an i440fx machine with an AMD Radeon
 R9 290X passed through from the host, so the guest can be driven and observed from
-outside. This repository holds the scripts and the installer's answer files. It holds
-no guest disks and no captured frames; those are re-derivable, and the hashes that
+outside. This repository holds the scripts and a redacted installer answer-file
+template. It holds no guest disks and no captured frames; those are re-derivable, and the hashes that
 stand in for them are recorded in the governing host's `plan/0002` and `plan/0003`.
 
 The governing project is `agentic-winxp-x64-r290x`, which owns this software as a
 Where-room component. Findings that a later session needs live in that project's
-`MEMORY.md` and `call/`, not here.
+`MEMORY.md` and `call/`, not here. [VERIFICATION.md](VERIFICATION.md) defines the
+real-input import, exact graft, run-evidence, and acceptance contracts.
 
 ## Machine shape
 
@@ -63,6 +64,9 @@ base over `xp64-gpu.raw`. The pristine base is 20 GiB and is not in this reposit
 
 Launch paths, all writing a serial log and exposing a QEMU monitor socket:
 
+- `run-driver.sh` — the driver-test configuration with the FAT channel attached.
+  It defaults to `xp64-gpu.raw` and refuses `install-blank.raw` and the pristine
+  rollback as writable targets. `WORK` may name a separate working copy.
 - `run-gpu-vm.sh` — the working configuration, with the 290X attached.
 - `run-nogpu-vm.sh` — control with the card removed. Differs from the above by exactly
   one `-device vfio-pci` line, which is what makes it a usable control.
@@ -106,7 +110,11 @@ Monitor and input:
   a silently dropped key reads as a hung guest.
 - `pickmenu.py` — chooses an entry from XP's startup-recovery menu by watching for it
   rather than by timed keystrokes. The countdown is too short to hit reliably.
-- `build-answer-floppy.sh`, `winnt.sif`, `winnt-nokey.sif`, the installer's answers.
+- `build-answer-floppy.sh` and `winnt-nokey.sif` build the installer's answers.
+  Copy `winnt.sif.example` to the gitignored `winnt.sif` and fill its two redacted
+  values locally. The real answer file is never committed.
+- `kdrun.sh` starts the debugger through `C:\dtw\kd.exe`. The `drive_c/dtw` alias
+  resolves inside the rig, and the launcher refuses any Wine drive mapped to `/`.
 
 ## Known traps
 

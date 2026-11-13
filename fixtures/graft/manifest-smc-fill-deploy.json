@@ -1,0 +1,5 @@
+{"ops": [
+  {"op": "fill", "at": "0x2E28AB", "size": 60574,
+   "donor": "donor-smc-win7-14.4.bin", "donor_at": 0},
+  {"op": "pe-checksum"}
+]}

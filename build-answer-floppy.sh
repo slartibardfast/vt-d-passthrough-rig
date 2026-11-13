@@ -9,12 +9,15 @@
 # 35 minute install to discover.
 set -euo pipefail
 
-RIG=/home/dconnolly/xp64-rig
+RIG=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 IMG="$RIG/xp64-ansfloppy.img"
 SIF="$RIG/winnt.sif"
 MNT=/mnt/xp64floppy
 
-[ -f "$SIF" ] || { echo "missing $SIF" >&2; exit 1; }
+[ -f "$SIF" ] || {
+  printf 'missing %s\ncopy winnt.sif.example to winnt.sif and fill both REDACTED values locally\n' "$SIF" >&2
+  exit 1
+}
 
 # Normalise to CRLF, which is what setup expects.
 printf 'answer file line endings: '

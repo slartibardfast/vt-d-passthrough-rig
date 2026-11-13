@@ -5,7 +5,7 @@ Why this file exists. Three keyboard approaches failed, each for a different
 reason, and the framebuffer was the only thing that caught them:
 
   1. sendkey at a 0.6s settle raced XP's own auto-advance, so a group split
-     across two boxes: VCFQD / V9FX9 / 9-46Wv / VH-K3 / CD4-4.
+     across two boxes. The literal rejected key is redacted from this record.
   2. Tab skips alternate boxes, so tab-then-type filled boxes 1, 3 and 5.
   3. With focus on the Next button every keystroke activated the button and the
      framebuffer came back byte-identical.

@@ -3,7 +3,7 @@
 #
 # plan/PLAN.md lists the driver's acceptance as fixed criteria rather than impressions:
 #   - ConfigManagerErrorCode is 0
-#   - VRAM reads 268435456 (256 MiB)
+#   - VRAM equals an independently established expected value
 #   - the driver file is present and loaded
 # Completing the installer without error is a failure.
 #
@@ -22,13 +22,19 @@
 # emulated VGA can go, which is the end state call/0006 describes.
 set -euo pipefail
 
-RIG=/home/dconnolly/xp64-rig
-WORK=${WORK:-$RIG/install-blank.raw}
+RIG=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+WORK=${WORK:-$RIG/xp64-gpu.raw}
 MON=${MON:-$RIG/mon.sock}
 LOG=${LOG:-$RIG/driver-stage.log}
 
 [ -f "$WORK" ]            || { echo "missing installed disk: $WORK" >&2; exit 1; }
 [ -f "$RIG/gpudrv.img" ]  || { echo "missing patched driver volume" >&2; exit 1; }
+for wrong in "$RIG/install-blank.raw" "$RIG/rollback/xp64-disk-good.raw"; do
+  if [ -f "$wrong" ] && [ "$WORK" -ef "$wrong" ]; then
+    printf 'refusing wrong or rollback disk read-write: %s\n' "$WORK" >&2
+    exit 1
+  fi
+done
 
 rm -f "$LOG" "$MON"
 

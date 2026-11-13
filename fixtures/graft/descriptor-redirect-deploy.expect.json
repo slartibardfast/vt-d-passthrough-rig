@@ -1,0 +1,14 @@
+{
+  "delta_id": "descriptor",
+  "base_size": 8525824,
+  "base_sha256": "8a77818ca9aeea19e6d5ece6bcde789211fcc6d54ee4966e265092bce7bd69a5",
+  "output_sha256": "224f763c95084c06d0ee5084894eb6ad67fa2bca21c0205290b0c00ab9f3126f",
+  "deployable": true,
+  "diff_mode": "exact",
+  "changed_ranges": [
+    ["0x8edf6", "0x8edfb"],
+    ["0xa9bcc", "0xa9bd1"],
+    ["0xa9bd2", "0xa9bd3"]
+  ],
+  "changed_bytes": 11
+}

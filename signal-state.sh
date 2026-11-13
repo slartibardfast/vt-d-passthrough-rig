@@ -3,7 +3,7 @@
 # signal-content. Reads the GLKVM feed through cdp.py and classifies the
 # canvas region (the UI chrome cropped away).
 set -u
-RIG=/home/dconnolly/xp64-rig
+RIG=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 OUT=$RIG/work/signal-state.txt
 mkdir -p "$RIG/work"
 rm -f /tmp/opencode/signal-state.png

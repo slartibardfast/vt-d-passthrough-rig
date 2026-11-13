@@ -1,0 +1,15 @@
+{
+  "delta_id": "smc",
+  "base_size": 8525824,
+  "base_sha256": "8a77818ca9aeea19e6d5ece6bcde789211fcc6d54ee4966e265092bce7bd69a5",
+  "output_sha256": "6505691f0589bd89b7adf2159692757eee0b3f2efa6e0ce834029d01af28b3ee",
+  "deployable": true,
+  "diff_mode": "within",
+  "changed_ranges": [["0x2e28ab", "0x2f1549"]],
+  "donors": {
+    "donor-smc-win7-14.4.bin": {
+      "size": 60574,
+      "sha256": "100355efec51d175afc3cfe2e4f0e03a3e6862f659773564c082a9a736cf167e"
+    }
+  }
+}

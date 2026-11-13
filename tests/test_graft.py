@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import struct
+import sys
 
 import pytest
 from hypothesis import given, strategies as st
@@ -133,7 +134,7 @@ def test_cli_roundtrip(tmp_path):
     import subprocess
     out = str(tmp_path / "out.bin")
     r = subprocess.run(
-        [os.path.join(os.path.dirname(__file__), "..", "venv", "bin", "python"),
+        [sys.executable,
          os.path.join(os.path.dirname(__file__), "..", "graft.py"),
          os.path.join(FIX, "base.bin"),
          os.path.join(FIX, "manifest.json"),

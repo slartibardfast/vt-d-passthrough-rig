@@ -2,6 +2,7 @@
 # stand in for them are recorded in the host repo's plan/0002 and plan/0003.
 *.raw
 *.img
+/winnt.sif
 rollback/
 work/
 

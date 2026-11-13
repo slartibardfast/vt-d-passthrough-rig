@@ -18,7 +18,7 @@ RIG = os.path.dirname(os.path.abspath(__file__))
 AUDIT = os.path.join(RIG, "work", "audit")
 MNT_SYS = "/mnt/xp-ro"
 MNT_FAT = "/mnt/d-ro"
-SYS_DISK = os.path.join(RIG, "install-blank.raw")
+SYS_DISK = os.path.join(RIG, "xp64-gpu.raw")
 FAT_DISK = os.path.join(RIG, "gpudrv.img")
 FINDINGS = os.path.join(RIG, "work", "audit-findings.md")
 

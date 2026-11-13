@@ -12,8 +12,8 @@ A stage whose record is not written did not happen.
 - Stock root carries AMD64, I386, SETUP.EXE, WIN51, WIN51AP and **no** winnt.sif.
 - winnt.sif differed from HEAD (this session had rewritten it: quoted AdminPassword,
   added AutoLogon/DriverSigningPolicy/AutomaticUpdates/UnattendedSwitch/WaitForReboot).
-  Restored from HEAD per runbook rule; restored file shows `AdminPassword=password`
-  unquoted and no AutoLogon, i.e. the committed October file.
+  Restored from HEAD per runbook rule; the restored file carried a literal
+  Administrator password, now redacted from the tracked record, and no AutoLogon.
 - QEMU 11.1.0; `pc` = pc-i440fx-11.1. Recorded because XP-vs-modern-QEMU ACPI
   compatibility is a known issue class (QEMU #1947).
 - Host vfio state: 02:00.0 + 02:00.1 (1002:67b0 / 1002:aac8) both bound vfio-pci,

@@ -3,7 +3,7 @@
 
 What went wrong before, in order:
   * sendkey at a fast settle raced XP's auto-advance, so groups landed split
-    across boxes (VCFQD / V9FX9 / 9-46Wv / VH-K3 / CD4-4).
+    across boxes. The literal rejected key is redacted from this record.
   * Tab skips alternate boxes, so tab-then-type filled boxes 1, 3 and 5 only.
   * With no box focused every keystroke went to the Next button, and the
     framebuffer came back byte-identical. An unchanged screenshot is the tell
