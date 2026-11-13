@@ -40,14 +40,25 @@ rm -f "$LOG" "$MON"
 
 # The installer CD is deliberately not attached. Boot order c is the first hard disk, and
 # the guest has to come up on its own installed Windows for the driver to bind.
-# ACCEL selects the accelerator: the default kvm, or tcg for correctness when
-# the host kernel's KVM breaks the 290X option ROM (measured 2026-11-13: kernel
-# 7.2.15-zen KVM deadlocks the ATOM ROM's LOCK cmpxchg spin at 0xD016E on both
-# qemu 11.1.0 and 11.1.3; TCG clears it. CPU must be a TCG model when ACCEL=tcg,
-# e.g. CPU=max ACCEL=tcg ./run-driver.sh).
+# ACCEL/CPU are parameterized for A/B work (defaults reproduce the October
+# config: kvm + host cpu + hpet=off). TCG needs CPU=max. The 2026-11-13 hang
+# law, measured and researched: the 290X option ROM's decompressed ATOM
+# runtime spins forever at guest 0xD016E (LOCK cmpxchg on card state) on
+# kernel 7.2.15-zen under KVM AND TCG, on qemu 11.1.0 AND 11.1.3, while
+# October's kernel 7.2.8-zen ran the identical config (kvm, hpet=off) daily.
+# hpet=off is NOT the cause (October counterexample); the one diskless
+# TCG+HPET clear is a single anomalous run, best explained by the racy class
+# of 7.2 PCI regressions: since 10baa9b4df40 ("PCI: Drop unnecessary retries
+# when restoring BARs"), devices returning not-ready after reset can lose
+# their config/BAR restore, breaking VFIO passthrough device init (LKML Oct
+# 2026, fixes 0f8b5d90d179 + e8df1d194c39). Dead card MMIO to the guest is
+# exactly the ATOM spin's shape. The discriminating test is the LTS kernel
+# (6.18.62, predates the 7.2 series): if KVM+LTS boots clean, the rig runs
+# LTS until zen carries the fixes.
+if [ "${ACCEL:-kvm}" = tcg ]; then MACHINE="pc,accel=tcg"; else MACHINE="pc,accel=kvm,hpet=off"; fi
 qemu-system-x86_64 \
   -name xp64-driver \
-  -machine pc,accel=${ACCEL:-kvm},hpet=off \
+  -machine "$MACHINE" \
   -cpu "${CPU:-host,-x2apic}" \
   -smp "${SMP:-4}" \
   -m 3072 \
