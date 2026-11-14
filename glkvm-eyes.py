@@ -55,7 +55,8 @@ def main():
     c = Cdp(get_ws_url())
     c.nav(URL + "/login")
     print("login:", login(c))
-    c.nav(URL + "/kvm")
+    # The app is a hash-router SPA: a bare /kvm 404s at nginx, and #/kvm opens the feed.
+    c.nav(URL + "/#/kvm")
     time.sleep(settle)
     c.shot(out)
     state = c.ev("(() => {const v=document.querySelector('video');"
