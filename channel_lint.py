@@ -18,7 +18,11 @@ SYSTEM_DRIVE = "C"
 LETTER_REF = re.compile(r"(?<![A-Za-z0-9%])[A-Za-z]:\\")
 
 BATCH_HEADS = {"@echo", "rem", "set", "for", "if", "copy", "regedit", "shutdown", "start",
-               "call", "goto", "echo", "type", "reg", "dir", "vol", "ping", "fsutil", "wmic"}
+               "call", "goto", "echo", "type", "reg", "dir", "vol", "ping", "fsutil", "wmic",
+               # Added with the live captures: the hook starts the WMI service and asks the
+               # service control manager for the miniport's state. Both are commands, and a linter
+               # that freezes its command list turns a legitimate line into prose.
+               "sc", "net", "setlocal", "endlocal", "pushd", "popd", "del", "move", "mkdir"}
 
 
 def _lines(text):

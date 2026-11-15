@@ -62,7 +62,9 @@ done
 # The files a run owes, in one place. The volatile video device map is here because
 # HARDWARE is built at boot and exists on no disk: an offline read of an overlay cannot
 # supply it, so the guest writes it during the run and the host only ever collects it.
-EVIDENCE=( "WINDOWS/devicemap.txt" "WINDOWS/devnode.txt" "letters-hook.txt" "WINDOWS/ntbtlog.txt"
+EVIDENCE=( "WINDOWS/capture.txt" "WINDOWS/devicemap.txt" "WINDOWS/devnode.txt"
+           "WINDOWS/videoctl.txt" "WINDOWS/enum-pci.txt" "WINDOWS/svc-ati2mtag.txt"
+           "WINDOWS/setupapi.log" "WINDOWS/runid.txt" "letters-hook.txt" "WINDOWS/ntbtlog.txt"
            "WINDOWS/system32/config/system" )
 
 if [ -n "$TREE" ]; then
@@ -117,20 +119,29 @@ if [ "$(realpath "$CHANNEL")" = "$(realpath "$GOLDEN")" ]; then
 fi
 
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-RUN="$RUNS/$NAME-$STAMP"
+NONCE="$NAME-$STAMP"
+RUN="$RUNS/$NONCE"
 OVERLAY="$RUN/overlay.qcow2"
 RUN_CHANNEL="$RUN/gpudrv.img"
 RUN_JSON="$RUN/run.json"
+# Every per-run artifact lives in the run directory. Three of them were fixed paths before, which
+# meant a second run overwrote the first: the firmware log (`/tmp/opencode/seabios.log`), the KD
+# socket the collector listens on, and the collector's own module log. A fixed KD socket is worse
+# than a lost log, because kdc.py loops forever on it: a collector left over from an earlier boot
+# races the fresh one to accept the guest, and the run cannot tell which stream it is reading.
+KD_SOCK="$RUN/kd.sock"
+SEABIOS_LOG="$RUN/seabios.log"
 
 prepare() {
   mkdir -p "$RUN"
   qemu-img create -f qcow2 -b "$GOLDEN" -F qcow2 "$OVERLAY" >/dev/null || return 2
   cp "$CHANNEL" "$RUN_CHANNEL" || return 2
-  python3 - "$RUN_JSON" "$GOLDEN" "$OVERLAY" "$RUN_CHANNEL" "$NAME" "$TIMEOUT" <<'PY'
+  python3 - "$RUN_JSON" "$GOLDEN" "$OVERLAY" "$RUN_CHANNEL" "$NONCE" "$NAME" "$TIMEOUT" <<'PY'
 import datetime, hashlib, json, os, sys
-out, golden, overlay, channel, name, timeout = sys.argv[1:7]
+out, golden, overlay, channel, nonce, name, timeout = sys.argv[1:8]
 json.dump({
     "name": name,
+    "nonce": nonce,
     "created": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "golden": os.path.abspath(golden),
     "golden_sha256": hashlib.sha256(open(golden, "rb").read()).hexdigest(),
@@ -158,18 +169,31 @@ json.dump(data, open(path, "w"), indent=2, sort_keys=True)
 PY
 }
 
+# The collector is single-occupancy on its socket, so a stale one is refused for the same reason a
+# second QEMU is: not because it is untidy, but because the run's evidence would come from one of
+# two possible writers.
+if "$RIG/kdc-running.sh" check >/dev/null; then
+  printf 'a kernel-debugger collector is already running: %s\n' \
+    "$("$RIG/kdc-running.sh" pids | tr '\n' ' ')" >&2
+  printf 'it would race this boot for the KD socket. Run: ./kdc-running.sh stop\n' >&2
+  exit 2
+fi
+
 prepare || { printf 'prepare failed; nothing was booted\n' >&2; exit 2; }
 printf 'run directory: %s\n' "$RUN"
+printf 'nonce: %s\n' "$NONCE"
 
 printf 'plan: boot the overlay, never the golden\n'
 printf 'plan: overlay %s backs onto %s\n' "$OVERLAY" "$GOLDEN"
 printf 'plan: channel copy %s\n' "$RUN_CHANNEL"
+KD_SOCK="$KD_SOCK" SEABIOS_LOG="$SEABIOS_LOG" \
 PRINT_ONLY=1 WORK="$OVERLAY" CHANNEL="$RUN_CHANNEL" FORMAT=qcow2 CACHE=writeback GLINET=none \
   LOGDIR="$RUN" LOG="$RUN/driver-stage.log" "$RIG/run-driver.sh" || { printf 'the launcher refused the plan\n' >&2; exit 2; }
 
 if [ -n "$DRY" ]; then
-  printf 'plan: the overlay is given /bootlog before it boots, unless --no-bootlog\n'
+  printf 'plan: the overlay is given /bootlog, the Startup trigger, and the nonce, unless --no-bootlog\n'
   printf 'plan: the run is held %ss, then closed through the monitor, so the hives flush\n' "$HOLD"
+  printf 'plan: evidence is read back from a read-only nbd attachment with its timestamps\n'
   printf 'dry run: prepared and planned, and no QEMU was started\n'
   exit 0
 fi
@@ -179,25 +203,33 @@ if [ -n "$PREPARE" ]; then
 fi
 
 if [ -z "$NO_BOOTLOG" ]; then
-  # The flag has to be on the entry of the image that boots, so it goes on the overlay and
-  # never on the golden: the golden's manifest records the bytes the OS disk had, and a baked
-  # setting would make that hash describe something other than what it says.
-  printf 'setting: /bootlog on the overlay NTLDR will read\n'
-  "$RIG/golden-settings.py" --image "$OVERLAY" --bootlog --record "$RUN" || {
-    printf 'the overlay could not be given /bootlog; refusing to boot a run that records nothing\n' >&2
-    exit 2; }
+  # Three settings, one image, one proof pass. The loader flag makes ntbtlog.txt exist; the trigger
+  # is what the guest runs at logon to answer the questions no offline read can ask; and the nonce
+  # is what lets the grader tell a file this run wrote from a file the golden handed over. Those
+  # last two were the whole of one failed control: the golden carried a November-14 trigger, so the
+  # captures L graded were inherited or missing, and nothing could say which.
+  printf 'setting: the overlay gets /bootlog, the Startup trigger, and the nonce\n'
+  "$RIG/golden-settings.py" --image "$OVERLAY" --bootlog \
+    --startup-hook "$RIG/install-channel/startup-hook.bat" --runid "$NONCE" --record "$RUN" || {
+      printf 'the overlay could not be configured; refusing to boot a run that records nothing\n' >&2
+      exit 2; }
+  amend "startup_hook_sha256=$(sha256sum "$RIG/install-channel/startup-hook.bat" | cut -d' ' -f1)"
 fi
 
-WORK="$OVERLAY" CHANNEL="$RUN_CHANNEL" FORMAT=qcow2 CACHE=writeback GLINET=none \
+KD_SOCK="$KD_SOCK" SEABIOS_LOG="$SEABIOS_LOG" KDC_LOG="$RUN/kdc-live.log" \
+  KDC_MODULES="$RUN/modules.txt" KDC_CATCHES="$RUN/captor-catches.log" \
+  WORK="$OVERLAY" CHANNEL="$RUN_CHANNEL" FORMAT=qcow2 CACHE=writeback GLINET=none \
   LOGDIR="$RUN" LOG="$RUN/driver-stage.log" "$RIG/start-boot-detached.sh" || {
     printf 'the launcher refused to start; the overlay and the channel copy stay for inspection\n' >&2
     exit 2; }
 
 amend "started=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "outcome=booting"
 
-# The measurement window. Frames are dumped from the emulated console surface, which witnesses
-# how far the boot came and nothing about the 290X's own output; load-verify.py says so when it
-# reports them. The monitor is opened per command and let go, never held across the wait.
+# The measurement window. A frame is attempted and, on this argv, always refused: there is no
+# display device attached, so QEMU answers that it has no console to dump. That answer is now
+# surfaced rather than swallowed, and load-verify.py reports the frame claim as unattempted rather
+# than passing or failing it. What does bear on the display question is the module stream plus the
+# captures the guest writes, and both are collected.
 printf 'hold: %ss before the run is closed\n' "$HOLD"
 ELAPSED=0
 while [ "$ELAPSED" -lt "$HOLD" ]; do
@@ -208,14 +240,20 @@ while [ "$ELAPSED" -lt "$HOLD" ]; do
     break
   fi
   if [ "$((ELAPSED % 60))" -eq 0 ]; then
-    /usr/bin/python3 "$RIG/monq.py" "screendump $RUN/feed-$ELAPSED.ppm" >/dev/null 2>&1 \
-      && printf 'feed: %s/feed-%ss.ppm\n' "$RUN" "$ELAPSED"
+    if /usr/bin/python3 "$RIG/monq.py" "screendump $RUN/feed-$ELAPSED.ppm" >"$RUN/feed-$ELAPSED.out" 2>&1 \
+       && [ -f "$RUN/feed-$ELAPSED.ppm" ]; then
+      printf 'feed: %s written\n' "$RUN/feed-$ELAPSED.ppm"
+    else
+      printf 'feed: none at %ss (%s)\n' "$ELAPSED" \
+        "$(grep -m1 -iE 'no console|error|cannot' "$RUN/feed-$ELAPSED.out" 2>/dev/null | tr -s ' ' | cut -c1-70)"
+    fi
   fi
 done
 if "$RIG/guest-running.sh" check >/dev/null; then
   printf 'close: asking the machine to shut down through the monitor\n'
-  /usr/bin/python3 "$RIG/monq.py" system_powerdown >/dev/null 2>&1 || \
-    printf 'the monitor refused the request; the timeout will end the run instead\n' >&2
+  /usr/bin/python3 "$RIG/monq.py" system_powerdown >"$RUN/powerdown.out" 2>&1 || {
+    printf 'the monitor refused the close request; the timeout will end the run instead\n' >&2
+    cat "$RUN/powerdown.out" >&2; }
 fi
 
 # Whether the guest ended its own run, and how to stop one that will not, belong to
@@ -229,32 +267,59 @@ else
 fi
 amend "ended=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "outcome=$OUTCOME" "crash_suspected=$([ "$OUTCOME" = timeout-killed ] && echo true || echo false)"
 
-# The read-back: the overlay holds everything the guest wrote, and nothing else needs the
-# disk. qemu-nbd exposes it as a block device so the system volume can be mounted read-only.
+# The collector has nothing left to read once the guest is gone, and leaving it alive poisons the
+# next run for the reason this script refuses one at the start.
+"$RIG/kdc-running.sh" stop || true
+
+# The read-back. The overlay is the run's record, so it is attached read-only, on a device that is
+# free, with the format named rather than probed: reading evidence out of an image must not be able
+# to change it. Timestamps are preserved, because "is this file from this boot or inherited from
+# the golden" is a question answered by mtime, and it is the question that cost this campaign a
+# diagnosis.
+nbd_free() {
+  local dev
+  for dev in $(seq 0 15); do
+    [ -b "/dev/nbd$dev" ] || continue
+    if ! sudo fuser -s "/dev/nbd$dev" 2>/dev/null; then
+      printf '/dev/nbd%s' "$dev"
+      return 0
+    fi
+  done
+  return 1
+}
+
 collect() {
-  local M=/tmp/opencode/experiment-evidence
+  local M=/tmp/opencode/experiment-evidence NBD DEV
+  NBD=$(nbd_free) || { printf 'every nbd device is busy\n' >&2; return 1; }
   sudo modprobe nbd max_part=8 || return 1
-  sudo qemu-nbd -c /dev/nbd0 "$OVERLAY" || return 1
+  sudo qemu-nbd -r -f qcow2 -c "$NBD" "$OVERLAY" || return 1
+  DEV="$NBD"
   sudo mkdir -p "$M"
-  if ! sudo mount -o ro /dev/nbd0p1 "$M"; then
+  if ! sudo mount -o ro "${NBD}p1" "$M"; then
     printf 'the overlay has no first partition to read evidence from\n' >&2
-    sudo qemu-nbd -d /dev/nbd0 || true
+    sudo qemu-nbd -d "$DEV" || true
     return 1
   fi
   TREE="$M" "$0" --list-evidence "$M" | tee "$RUN/evidence-list.txt"
   mkdir -p "$RUN/evidence"
+  : > "$RUN/evidence/MANIFEST.tsv"
+  printf 'path\tsha256\tmtime_utc\n' >> "$RUN/evidence/MANIFEST.tsv"
   while read -r rel state _; do
     printf 'evidence: %s %s\n' "$rel" "$state"
     [ "$state" = present ] || continue
     [ -f "$M/$rel" ] || continue
     mkdir -p "$RUN/evidence/$(dirname "$rel")"
-    sudo cp "$M/$rel" "$RUN/evidence/$rel"
+    sudo cp -p "$M/$rel" "$RUN/evidence/$rel"
     sudo chown "$(id -u):$(id -g)" "$RUN/evidence/$rel"
+    printf '%s\t%s\t%s\n' "$rel" \
+      "$(sha256sum "$RUN/evidence/$rel" | cut -d' ' -f1)" \
+      "$(date -u -r "$RUN/evidence/$rel" +%Y-%m-%dT%H:%M:%SZ)" >> "$RUN/evidence/MANIFEST.tsv"
     printf 'collected %s\n' "$rel"
   done < "$RUN/evidence-list.txt"
   sync
   sudo umount "$M"
-  sudo qemu-nbd -d /dev/nbd0
+  sudo qemu-nbd -d "$DEV"
+  amend "evidence_manifest=$RUN/evidence/MANIFEST.tsv"
 }
 
 if collect; then
@@ -266,3 +331,4 @@ fi
 
 printf 'run directory: %s\n' "$RUN"
 printf 'outcome: %s\n' "$OUTCOME"
+printf 'grade it: ./load-verify.py --run %s\n' "$RUN"

@@ -36,10 +36,20 @@ if "$RIG/guest-running.sh" check >/dev/null; then
   printf 'a QEMU is already running; refusing to start a second one on this GPU\n'
   exit 2
 fi
+if "$RIG/kdc-running.sh" check >/dev/null; then
+  printf 'a kdc.py collector is already running; it would race this boot for the KD socket\n'
+  printf 'stop it first: %s/kdc-running.sh stop\n' "$RIG"
+  exit 2
+fi
 rm -f "$RIG/mon.sock"
-setsid nohup python3 "$RIG/kdc.py" >"$LOGDIR/kdc-detached.log" 2>&1 < /dev/null &
+setsid nohup env KD_SOCK="${KD_SOCK:-/tmp/opencode/kd.sock}" KDC_LOG="${KDC_LOG:-$RIG/kdc-live.log}" \
+  KDC_MODULES="${KDC_MODULES:-$RIG/modules.txt}" \
+  KDC_CATCHES="${KDC_CATCHES:-$RIG/work/captor-catches.log}" \
+  python3 "$RIG/kdc.py" >"$LOGDIR/kdc-detached.log" 2>&1 < /dev/null &
 printf 'kdc pid %s\n' "$!"
 sleep 1
-setsid nohup env WORK="$DISK" "$RIG/run-driver.sh" >"$LOGDIR/run-driver-detached.log" 2>&1 < /dev/null &
+setsid nohup env WORK="$DISK" KD_SOCK="${KD_SOCK:-/tmp/opencode/kd.sock}" \
+  SEABIOS_LOG="${SEABIOS_LOG:-/tmp/opencode/seabios.log}" \
+  "$RIG/run-driver.sh" >"$LOGDIR/run-driver-detached.log" 2>&1 < /dev/null &
 printf 'launcher pid %s\n' "$!"
 printf 'logs: %s/run-driver-detached.log %s/kdc-detached.log\n' "$LOGDIR" "$LOGDIR"

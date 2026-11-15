@@ -28,8 +28,11 @@ import threading
 import time
 
 RIG  = os.path.dirname(os.path.abspath(__file__))
-SOCK = "/tmp/opencode/kd.sock"
-LOG  = os.path.join(RIG, "kdc-live.log")
+# Both default to the historic fixed paths so an unchanged invocation is unchanged. They are
+# overridable because a fixed socket makes a stale collector race a fresh one for the guest, and a
+# log in the rig root blends the runs together.
+SOCK = os.environ.get("KD_SOCK", "/tmp/opencode/kd.sock")
+LOG  = os.environ.get("KDC_LOG", os.path.join(RIG, "kdc-live.log"))
 HOLD_RELEASE = os.path.join(RIG, "hold-release")
 
 DATA_LEADER  = 0x30303030
@@ -153,7 +156,7 @@ def handle(kd, ptype, bcount, pid, cksum, data):
             base = struct.unpack_from("<Q", data, 0x28)[0] if len(data) >= 0x30 else 0
             name = parse_module_name(data)
             log("MODULE LOAD pid=%#x base=%#x name=%s" % (pid, base, name))
-            with open(os.path.join(RIG, "modules.txt"), "a") as mf:
+            with open(os.environ.get("KDC_MODULES", os.path.join(RIG, "modules.txt")), "a") as mf:
                 mf.write("%x %s\n" % (base, name))
             if not name.lower().endswith("ntoskrnl.exe"):
                 pass
@@ -349,7 +352,7 @@ def module_map():
     """Unique (base, name) pairs from this boot's module-load lines."""
     mods = []
     try:
-        for line in open(os.path.join(RIG, "kdc-live.log"), errors="replace"):
+        for line in open(LOG, errors="replace"):
             m = re.search(r"MODULE LOAD.*base=(0x[0-9a-f]+) name=(\S+)", line)
             if m:
                 b, n = int(m.group(1), 16), m.group(2)
@@ -375,7 +378,7 @@ def captor_catch(kd, newstate, pid, data):
         newstate, pid, exc, addr, where)
     log("    CAPTOR " + line)
     try:
-        with open(os.path.join(RIG, "work", "captor-catches.log"), "a") as f:
+        with open(os.environ.get("KDC_CATCHES", os.path.join(RIG, "work", "captor-catches.log")), "a") as f:
             f.write(line + "\n")
     except OSError:
         pass

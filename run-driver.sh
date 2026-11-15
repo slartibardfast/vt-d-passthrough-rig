@@ -82,8 +82,8 @@ QEMU=(qemu-system-x86_64
   -device usb-kbd,bus=usb.0
   -device usb-tablet,bus=usb.0
   -monitor unix:"$MON",server,nowait
-  -chardev socket,id=kd,path=/tmp/opencode/kd.sock,server=on,wait=off
-  -chardev file,id=seabios,path=/tmp/opencode/seabios.log
+  -chardev socket,id=kd,path=${KD_SOCK:-/tmp/opencode/kd.sock},server=on,wait=off
+  -chardev file,id=seabios,path=${SEABIOS_LOG:-/tmp/opencode/seabios.log}
   -device isa-debugcon,iobase=0x402,chardev=seabios
   -serial chardev:kd
   -boot order=c

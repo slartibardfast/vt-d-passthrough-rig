@@ -17,20 +17,43 @@
 # because the writeback cache still holds writes the file does not.
 #
 # Usage: golden-build.sh --from <raw-or-image> --to <dir> [--name NAME] [--force]
+#                        [--provenance <text>]
+#        golden-build.sh --amend <golden> [--source <image>] [--provenance <text>]
+#
+# Why --amend exists. A manifest is the record of what a golden is, and the honest answer includes
+# how its source disk came to hold those bytes. The first golden of this campaign was converted from
+# a disk that had two signalled-off boots and then one clean shutdown, and that belongs in the
+# manifest rather than only in a memory log. Amending through the tool keeps the rule that these
+# records are never hand-edited, and re-derives the golden's own hash instead of trusting the one
+# already written.
 set -uo pipefail
 
 RIG=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-FROM="" TO="" NAME="os" FORCE=""
+FROM="" TO="" NAME="os" FORCE="" AMEND="" SOURCE="" PROVENANCE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --from) FROM=${2:-}; shift 2;;
     --to) TO=${2:-}; shift 2;;
     --name) NAME=${2:-}; shift 2;;
+    --amend) AMEND=${2:-}; shift 2;;
+    --source) SOURCE=${2:-}; shift 2;;
+    --provenance) PROVENANCE=${2:-}; shift 2;;
     --force) FORCE=1; shift;;
     *) printf 'unknown argument: %s\n' "$1" >&2; exit 2;;
   esac
 done
+
+if [ -n "$AMEND" ]; then
+  test -f "$AMEND" || { printf 'no such golden to amend: %s\n' "$AMEND" >&2; exit 2; }
+  AMEND_MANIFEST="${AMEND%.qcow2}.json"
+  test -f "$AMEND_MANIFEST" || {
+    printf 'no manifest beside %s; a golden with no record is not a golden\n' "$AMEND" >&2
+    exit 2; }
+  python3 "$RIG/golden_amend.py" "$AMEND" "$AMEND_MANIFEST" "${SOURCE:-}" "$PROVENANCE"
+  exit $?
+fi
+
 [ -n "$FROM" ] && [ -n "$TO" ] || { printf 'usage: golden-build.sh --from <image> --to <dir> [--name NAME] [--force]\n' >&2; exit 2; }
 test -f "$FROM" || { printf 'no such source image: %s\n' "$FROM" >&2; exit 2; }
 # The guest check comes from guest-running.sh, which holds the rule and the reason for it:
@@ -87,24 +110,37 @@ print(json.dumps({"disk_signature": "0x%08x" % sig, "partition_offset": start * 
 PY
 ) || { printf 'cannot read an MBR partition table from %s; refusing to record an unknown golden\n' "$FROM" >&2; exit 2; }
 
-python3 - "$GOLDEN" "$MANIFEST" "$FROM" "$IDENT" <<'PY'
+python3 - "$GOLDEN" "$MANIFEST" "$FROM" "$IDENT" "$PROVENANCE" <<'PY'
 import datetime, hashlib, json, os, subprocess, sys
-golden, manifest, source, ident = sys.argv[1:5]
+golden, manifest, source, ident, provenance = sys.argv[1:6]
+
+
+def sha256_stream(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 22), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
 digest = hashlib.sha256(open(golden, "rb").read()).hexdigest()
 info = json.loads(subprocess.run(["qemu-img", "info", "--output=json", golden],
                                  capture_output=True, text=True, check=True).stdout)
 if info.get("backing-filename"):
     raise SystemExit("%s has a backing file, so it is not standalone" % golden)
-json.dump({
+record = {
     "golden": os.path.abspath(golden),
     "format": info["format"],
     "virtual_bytes": info["virtual-size"],
     "bytes": os.path.getsize(golden),
     "sha256": digest,
     "source": os.path.abspath(source),
+    "source_sha256": sha256_stream(source),
     "source_identity": json.loads(ident),
     "created": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-}, open(manifest, "w"), indent=2, sort_keys=True)
+}
+if provenance:
+    record["provenance"] = provenance
+json.dump(record, open(manifest, "w"), indent=2, sort_keys=True)
 print("recorded %s" % manifest)
 PY
 [ -s "$MANIFEST" ] || exit 1

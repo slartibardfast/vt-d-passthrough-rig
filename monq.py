@@ -43,7 +43,23 @@ def run(cmd, wait=1.0):
     return out.decode(errors="replace")
 
 
+ERROR_WORDS = ("error", "invalid", "not found", "no console", "cannot", "could not")
+
+
+def looks_like_a_refusal(text):
+    """Whether the monitor answered with a refusal rather than a result.
+
+    This script used to exit 0 whatever came back, so a caller that gated on it reported a
+    screendump that never happened. A checker that cannot fail is worse than no checker, and this
+    one manufactured a positive line in a graded run: `screendump` under `-display none` answers
+    "There is no console to take a screendump from", and the runner printed a filename anyway.
+    """
+    low = text.lower()
+    return any(w in low for w in ERROR_WORDS)
+
+
 if __name__ == "__main__":
+    bad = 0
     for c in sys.argv[1:]:
         # strip the echoed command and the trailing prompt
         txt = run(c)
@@ -52,3 +68,6 @@ if __name__ == "__main__":
         print(f"===== {c} =====")
         for l in lines[-14:]:
             print("  " + l[:160])
+        if looks_like_a_refusal(txt):
+            bad = 1
+    sys.exit(bad)
