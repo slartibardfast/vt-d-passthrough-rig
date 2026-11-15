@@ -1,0 +1,6 @@
+
+# A registry hive is a binary artifact, not authored text. It is tracked so the
+# state before the registration graft can be re-checked on any machine, and the
+# naming lane cannot read it as markdown or source. Nothing hides here: the bytes
+# are a hive, and `registration_graft.py check` is the reader for them.
+work/evidence/system-hive-before-the-graft
