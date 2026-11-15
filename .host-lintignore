@@ -4,3 +4,9 @@
 # naming lane cannot read it as markdown or source. Nothing hides here: the bytes
 # are a hive, and `registration_graft.py check` is the reader for them.
 work/evidence/system-hive-before-the-graft
+# The same reason covers the two further hives banked beside it: the October audit
+# hive the miniport-only pairing was read from (copied byte for byte from the
+# acquisition checkout's work/audit/SYSTEM), and the hive offline-registration.sh
+# read back off the disk after the graft.
+work/evidence/system-hive-october-audit
+work/evidence/system-hive-after-the-graft

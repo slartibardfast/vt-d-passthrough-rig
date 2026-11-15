@@ -215,8 +215,10 @@ def cmd_harderror(a):
     of that letter with a hard-error dialog, "There is no disk in the drive", and
     that dialog is what stalled every version of the letter witness: the batch,
     the console, and the survey all waited on a button nobody was watching. The
-    setting is the documented one, HKLM\\SYSTEM\\...\\Control\\Windows\\HardErrorMode,
-    and 2 means do not raise the dialog.
+    documented setting is HKLM\\SYSTEM\\...\\Control\\Windows\\ErrorMode, and 2
+    means do not raise the dialog. An earlier revision wrote HardErrorMode, which
+    is not that value: a boot with HardErrorMode=2 and ErrorMode=0 still raised
+    the modal on 2026-11-14, so ErrorMode is what this writes now.
 
     It is written into every ControlSet in the hive rather than a chosen one:
     CurrentControlSet is a link that only exists in a booted system, and the
@@ -234,7 +236,7 @@ def cmd_harderror(a):
         if node == -1:
             print("%s has no Control\\Windows; skipping it" % child_name)
             continue
-        value = {"key": "HardErrorMode", "t": 4, "length": 4, "value": struct.pack("<I", 2)}
+        value = {"key": "ErrorMode", "t": 4, "length": 4, "value": struct.pack("<I", 2)}
         h.node_set_value(node, value)
         written.append(child_name)
     if not written:
@@ -243,14 +245,14 @@ def cmd_harderror(a):
     h.commit(a.hive)
     check = hivex.Hivex(a.hive)
     for child_name in written:
-        control = h.node_get_child(check.root(), child_name)
-        control = h.node_get_child(control, "Control")
-        node = h.node_get_child(control, "Windows")
-        vh = h.node_get_value(node, "HardErrorMode")
-        got = struct.unpack("<I", h.value_value(vh)[1])[0]
+        control = check.node_get_child(check.root(), child_name)
+        control = check.node_get_child(control, "Control")
+        node = check.node_get_child(control, "Windows")
+        vh = check.node_get_value(node, "ErrorMode")
+        got = struct.unpack("<I", check.value_value(vh)[1])[0]
         if got != 2:
-            raise SystemExit("read-back failed for %s: HardErrorMode=%d" % (child_name, got))
-        print("%s\\Control\\Windows HardErrorMode = 2 (no disk dialog)" % child_name)
+            raise SystemExit("read-back failed for %s: ErrorMode=%d" % (child_name, got))
+        print("%s\\Control\\Windows ErrorMode = 2 (no disk dialog)" % child_name)
     return 0
 
 

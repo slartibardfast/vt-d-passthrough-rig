@@ -136,3 +136,43 @@ letters-done
     assert result.returncode == 0, result.stdout
     assert "PASS" in result.stdout
 
+
+
+SYSTEM_PYTHON = "/usr/bin/python3"
+BANKED_HIVE = ROOT / "work" / "evidence" / "system-hive-before-the-graft"
+
+
+def system_python_has_hivex():
+    probe = subprocess.run([SYSTEM_PYTHON, "-I", "-c", "import hivex"], capture_output=True)
+    return probe.returncode == 0
+
+
+def error_mode_values(hive):
+    read = subprocess.run(
+        [SYSTEM_PYTHON, "-I", "-c",
+         "import hivex, struct, sys\n"
+         "h = hivex.Hivex(sys.argv[1])\n"
+         "for cs in ('ControlSet001', 'ControlSet002'):\n"
+         "    n = h.node_get_child(h.node_get_child(h.node_get_child(h.root(), cs), 'Control'), 'Windows')\n"
+         "    print(cs, struct.unpack('<I', h.value_value(h.node_get_value(n, 'ErrorMode'))[1])[0])\n",
+         str(hive)],
+        capture_output=True, text=True, check=True,
+    )
+    return dict(line.split() for line in read.stdout.splitlines())
+
+
+def test_harderror_writes_the_documented_error_mode_and_reads_it_back(tmp_path):
+    # The value Windows reads for the No Disk dialog is Control\Windows\ErrorMode.
+    # The banked pre-graft hive carries ErrorMode=0 beside HardErrorMode=2, which is
+    # the state that still raised the modal, so this starts from that real state.
+    if not system_python_has_hivex():
+        pytest.skip("the hive edit needs python3-hivex in the system Python, which this runner lacks")
+    hive = tmp_path / "system"
+    hive.write_bytes(BANKED_HIVE.read_bytes())
+    assert error_mode_values(hive) == {"ControlSet001": "0", "ControlSet002": "0"}
+    run = subprocess.run([SYSTEM_PYTHON, "-I", str(ROOT / "hive-pin.py"), "harderror", str(hive)],
+                         capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    assert "ControlSet001\\Control\\Windows ErrorMode = 2" in run.stdout
+    assert "ControlSet002\\Control\\Windows ErrorMode = 2" in run.stdout
+    assert error_mode_values(hive) == {"ControlSet001": "2", "ControlSet002": "2"}
