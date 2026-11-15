@@ -26,17 +26,27 @@ RIG=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 WORK=${WORK:-$RIG/xp64-gpu.raw}
 MON=${MON:-$RIG/mon.sock}
 LOG=${LOG:-$RIG/driver-stage.log}
+# FORMAT and CACHE are named rather than fixed so the iteration loop can boot a qcow2
+# overlay with the caching the plan requires. The defaults reproduce the raw disk and
+# QEMU's own default, which is writeback, so an unchanged invocation is unchanged.
+FORMAT=${FORMAT:-raw}
+CACHE=${CACHE:-writeback}
+CHANNEL=${CHANNEL:-$RIG/gpudrv.img}
+# GLINET=none keeps the GL.iNet composite off the bus. Its two mass-storage interfaces
+# present no media, and one of them raises the modal that has blocked every instrument
+# that waited on a button. Input arrives through the emulated usb-kbd and usb-tablet
+# above, which is measured working, so nothing is lost. call/0013 keeps this rule
+# whatever ErrorMode says.
+GLINET=${GLINET:-attach}
 
 [ -f "$WORK" ]            || { echo "missing installed disk: $WORK" >&2; exit 1; }
-[ -f "$RIG/gpudrv.img" ]  || { echo "missing patched driver volume" >&2; exit 1; }
+[ -f "$CHANNEL" ]         || { echo "missing patched driver volume: $CHANNEL" >&2; exit 1; }
 for wrong in "$RIG/install-blank.raw" "$RIG/rollback/xp64-disk-good.raw"; do
   if [ -f "$wrong" ] && [ "$WORK" -ef "$wrong" ]; then
     printf 'refusing wrong or rollback disk read-write: %s\n' "$WORK" >&2
     exit 1
   fi
 done
-
-rm -f "$LOG" "$MON"
 
 # The installer CD is deliberately not attached. Boot order c is the first hard disk, and
 # the guest has to come up on its own installed Windows for the driver to bind.
@@ -56,25 +66,42 @@ rm -f "$LOG" "$MON"
 # (6.18.62, predates the 7.2 series): if KVM+LTS boots clean, the rig runs
 # LTS until zen carries the fixes.
 if [ "${ACCEL:-kvm}" = tcg ]; then MACHINE="pc,accel=tcg"; else MACHINE="pc,accel=kvm,hpet=off"; fi
-qemu-system-x86_64 \
-  -name xp64-driver \
-  -machine "$MACHINE" \
-  -cpu "${CPU:-host,-x2apic}" \
-  -smp "${SMP:-4}" \
-  -m 3072 \
-  -rtc base=localtime \
-  -nodefaults \
-  -display none \
-  -device piix3-usb-uhci,id=usb,addr=0x5 \
-  -device usb-kbd,bus=usb.0 \
-  -device usb-tablet,bus=usb.0 \
-  -monitor unix:"$MON",server,nowait \
-  -chardev socket,id=kd,path=/tmp/opencode/kd.sock,server=on,wait=off -chardev file,id=seabios,path=/tmp/opencode/seabios.log -device isa-debugcon,iobase=0x402,chardev=seabios -serial chardev:kd \
-  -boot order=c \
-  -drive file="$WORK",format=raw,if=ide,index=0,media=disk \
-  -drive file="$RIG/gpudrv.img",format=raw,if=ide,index=2,media=disk \
-  -device vfio-pci,host=02:00.0,id=radeon290x,bus=pci.0,addr=0x4,\
-romfile="$RIG/290x-vbios.rom",x-vga=on &
+# The argv is one array rather than an inline command, for two reasons. PRINT_ONLY can then
+# print exactly what a boot would run, which is what the iteration loop's dry run needs, and
+# a plan that is derived from the launcher cannot drift from the launcher.
+QEMU=(qemu-system-x86_64
+  -name xp64-driver
+  -machine "$MACHINE"
+  -cpu "${CPU:-host,-x2apic}"
+  -smp "${SMP:-4}"
+  -m 3072
+  -rtc base=localtime
+  -nodefaults
+  -display none
+  -device piix3-usb-uhci,id=usb,addr=0x5
+  -device usb-kbd,bus=usb.0
+  -device usb-tablet,bus=usb.0
+  -monitor unix:"$MON",server,nowait
+  -chardev socket,id=kd,path=/tmp/opencode/kd.sock,server=on,wait=off
+  -chardev file,id=seabios,path=/tmp/opencode/seabios.log
+  -device isa-debugcon,iobase=0x402,chardev=seabios
+  -serial chardev:kd
+  -boot order=c
+  -drive "file=$WORK,format=$FORMAT,cache=$CACHE,if=ide,index=0,media=disk"
+  -drive "file=$CHANNEL,format=raw,if=ide,index=2,media=disk"
+  -device "vfio-pci,host=02:00.0,id=radeon290x,bus=pci.0,addr=0x4,romfile=$RIG/290x-vbios.rom,x-vga=on")
+
+if [ -n "${PRINT_ONLY:-}" ]; then
+  printf 'qemu-argv: %s\n' "${QEMU[*]}"
+  printf 'qemu-argv: monitor=%s glinet=%s log=%s\n' "$MON" "$GLINET" "$LOG"
+  exit 0
+fi
+
+# A dry run must not disturb a live boot, so the log and the socket are cleared
+# here rather than beside the guards above.
+rm -f "$LOG" "$MON"
+
+"${QEMU[@]}" &
 
 # The GL.iNet keyboard/mouse (38eb:0001) attaches through the monitor ~1.5s after
 # launch - AFTER SeaBIOS's USB scan but BEFORE Windows boots, so Windows hot-plug
@@ -89,12 +116,16 @@ for _ in $(seq 1 40); do
   sleep 0.25
 done
 sleep 1
-for _ in 1 2 3; do
-  if python3 "$RIG/qmon.py" "$MON" "device_add usb-host,vendorid=0x38eb,productid=0x0001,id=glinet" 2>/dev/null | grep -qi error; then
-    sleep 2
-  else
-    break
-  fi
-done
+if [ "$GLINET" = attach ]; then
+  for _ in 1 2 3; do
+    if python3 "$RIG/qmon.py" "$MON" "device_add usb-host,vendorid=0x38eb,productid=0x0001,id=glinet" 2>/dev/null | grep -qi error; then
+      sleep 2
+    else
+      break
+    fi
+  done
+else
+  printf 'glinet=none: the composite stays off the bus, so no empty media appears\n'
+fi
 
 wait "$QEMUPID"
