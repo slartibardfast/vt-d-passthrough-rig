@@ -34,6 +34,8 @@ while [ $# -gt 0 ]; do
     --run) RUN=${2:-}; shift 2;;
     --out) OUT=${2:-}; shift 2;;
     --base-channel) BASE_CHANNEL=${2:-}; shift 2;;
+    --mount) MOUNT_POINT=${2:-}; shift 2;;
+    --keep-mounted) KEEP_MOUNTED=1; shift;;
     -h|--help) sed -n '1,24p' "$0"; exit 0;;
     *) printf 'unknown argument: %s\nusage: %s\n' "$1" \
          'channel-image.sh --variant <name> [--run DIR] [--out IMAGE]' >&2; exit 2;;
@@ -70,7 +72,11 @@ printf '\n=== copy the base channel, then move one file inside the copy ===\n'
 cp "$BASE_CHANNEL" "$OUT" || exit 1
 printf 'channel image: %s\n' "$OUT"
 
-M=/tmp/opencode/channel-image-mnt
+# Where the image is mounted while it is written and then read back. `/mnt/gpudrv` is where the
+# campaign's earlier deploys were recorded, so a deployment record made here names the same place a
+# reader has already seen; the point can be moved for a test.
+M=${MOUNT_POINT:-/mnt/gpudrv}
+KEEP_MOUNTED=""
 DOFF=$(python3 "$RIG/partition-offset.py" "$OUT") || exit 1
 sudo mkdir -p "$M"
 if ! sudo mount -o loop,offset="$DOFF" "$OUT" "$M"; then
@@ -81,6 +87,7 @@ UMOUNTED=""
 cleanup() {
   [ -n "$UMOUNTED" ] && return 0
   UMOUNTED=1
+  [ -n "$KEEP_MOUNTED" ] && { printf 'left mounted read-only at %s (--keep-mounted); release it with ''sudo umount %s\n' "$M" "$M"; return 0; }
   sudo umount "$M" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -98,9 +105,22 @@ sudo cp "$CANDIDATE" "$M/drv/ati2mtag.sys" || exit 1
 sync
 printf 'deployed into the image\n'
 
-printf '\n=== verify the deployment against the mounted image, as the guest will read it ===\n'
+printf '\n=== clean unmount, then a read-only re-attach, then read the hash from there ===\n'
+# The task text asks for the deployed hash to be read back after a clean unmount and a read-only
+# remount, and the difference is not ceremony. Verifying against the same writable attachment the
+# copy went through can read bytes that were never flushed, so a record could name a hash the file
+# on disk does not hold once the machine is restarted or the image is opened elsewhere.
+sudo umount "$M" || { printf 'the writable attachment would not release; nothing was recorded\n' >&2; exit 1; }
+UMOUNTED=1
+sync
+if ! sudo mount -o ro,loop,offset="$DOFF" "$OUT" "$M"; then
+  printf 'the finished image will not mount read-only at %s\n' "$M" >&2
+  exit 1
+fi
+printf 're-attached read-only at %s\n' "$M"
+
 cp "$CANDIDATE" "$RUN/ati2mtag.sys" || exit 1
-sudo chmod a+r "$M/drv/ati2mtag.sys" 2>/dev/null || true
+printf '\n=== verify the deployment against the read-only attachment, as the guest will read it ===\n'
 python3 "$RIG/graft_deploy.py" --verify-mounted --built "$RUN/ati2mtag.sys" \
   --mount "$M" --record "$RUN/deployment.json" --rollback "$PREVIOUS" || exit 1
 cleanup

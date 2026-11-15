@@ -21,7 +21,11 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 BUILDER = ROOT / "channel-image.sh"
 RUNNER = ROOT / "run-experiment.sh"
+# The three single-delta variants. The combined graft is built by the same tool through the same
+# table, and it is checked separately below, because a row in its table means something different:
+# the three deltas are experiments and the union is a claim about their sum.
 VARIANTS = ("descriptor", "dispatch", "smc")
+ALL_DELTAS = VARIANTS + ("combined",)
 NO_SUDO = "mounting a channel image needs passwordless sudo, which this run does not have"
 
 
@@ -48,9 +52,36 @@ def test_the_variant_table_has_one_home():
         src = script.read_text()
         assert "delta-paths.sh" in src, "%s does not source the table" % script.name
         assert "delta_paths" in src, "%s does not call the resolver" % script.name
-    for name in VARIANTS:
+    for name in ALL_DELTAS:
         assert "manifest-%s" % name in table.read_text(), "%s is not in the table" % name
-    assert table.read_text().count("fixtures/graft/manifest-") == 3, "the table has drifted"
+    assert table.read_text().count("fixtures/graft/manifest-") == len(ALL_DELTAS), "the table has drifted"
+
+
+def test_the_combined_graft_resolves_to_the_union_and_not_to_a_part():
+    """A fourth name in the table has to point at the union's records, or the builder would deploy a
+    single delta and its deployment record would say otherwise."""
+    r = subprocess.run(["/bin/bash", "-c",
+                        'RIG=%s; . "$RIG/delta-paths.sh"; delta_paths combined && '
+                        'printf \'%%s\\n%%s\\n\' "$MANIFEST" "$EXPECT"' % ROOT],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    lines = r.stdout.strip().splitlines()
+    assert lines[0].endswith("manifest-combined-deploy.json"), lines
+    assert lines[1].endswith("combined-deploy.expect.json"), lines
+    for path in lines:
+        assert Path(path).is_file(), "the table names a record that is not there: %s" % path
+
+
+def test_the_combined_expectation_binds_the_union_positionally():
+    """The combined graft's own proof, read through the table the builder uses."""
+    expectation = ROOT / "fixtures" / "graft" / "combined-deploy.expect.json"
+    if not expectation.is_file():
+        pytest.skip("the combined graft expectation has not been generated on this machine")
+    record = json.loads(expectation.read_text())
+    assert record["diff_mode"] == "within"
+    assert len(record["changed_positions_sha256"]) == 64
+    assert record["sum_of_components"] == record["union_positions"] == record["changed_bytes"]
+    assert len(record["components"]) == 3, "the union names fewer than the three banked deltas"
 
 
 def test_the_resolver_refuses_a_name_it_does_not_have():
@@ -109,9 +140,23 @@ def test_the_builder_refuses_to_invent_a_variant():
     r = subprocess.run([str(BUILDER)], capture_output=True, text=True, cwd=str(ROOT))
     assert r.returncode == 2, r.stdout + r.stderr
     assert "name the variant" in r.stderr, r.stderr
-    r = subprocess.run([str(BUILDER), "--variant", "combined"], capture_output=True, text=True,
-                       cwd=str(ROOT))
+    r = subprocess.run([str(BUILDER), "--variant", "everything-at-once"], capture_output=True,
+                       text=True, cwd=str(ROOT))
     assert r.returncode == 2 and "unknown variant" in r.stderr, r.stderr
+
+
+def test_a_name_in_the_table_is_a_delta_the_builder_can_act_on():
+    """The inverse of the refusal above, and the reason `combined` is a name and `union` is not.
+
+    A name the table resolves has to get as far as the build; one it does not has to stop at the
+    argument. Testing only the refusal would let a typo'd entry pass as unknown forever.
+    """
+    r = subprocess.run([str(BUILDER), "--variant", "combined", "--base-channel",
+                        str(ROOT / "work" / "channels" / "does-not-exist.img")],
+                       capture_output=True, text=True, cwd=str(ROOT))
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "unknown variant" not in r.stderr, "combined is in the table and must not read as unknown"
+    assert "no base channel image" in r.stderr, r.stderr
 
 
 def test_a_run_records_the_candidate_its_channel_holds():
@@ -187,3 +232,50 @@ def test_the_deployment_record_carries_what_delta_verify_reads():
         rollback = path.parent / "rollback-ati2mtag.sys"
         assert rollback.is_file(), "the record names a rollback that was not kept"
         assert sha(rollback) == record["rollback_sha256"]
+
+def _list_volume(image):
+    """Every regular file on a channel image, by path and digest, read through a read-only mount."""
+    mount = "/tmp/opencode/test-channel-list-mnt"
+    offset = int(subprocess.run([sys.executable, str(ROOT / "partition-offset.py"), str(image)],
+                                check=True, capture_output=True, text=True).stdout.strip())
+    subprocess.run(["sudo", "mkdir", "-p", mount], check=True)
+    subprocess.run(["sudo", "mount", "-o", "ro,loop,offset=%d" % offset, str(image), mount], check=True)
+    try:
+        listing = {}
+        for path in sorted(Path(mount).rglob("*")):
+            if path.is_file():
+                listing[str(path.relative_to(mount))] = hashlib.sha256(path.read_bytes()).hexdigest()
+        return listing
+    finally:
+        subprocess.run(["sudo", "umount", mount], check=True)
+
+
+def test_a_variant_image_differs_from_its_base_by_one_file_and_by_nothing_else():
+    """The single-delta claim, at the volume layer rather than the driver layer.
+
+    A comparison between two grafts is only a comparison if the two channel images differ in exactly
+    one file. Everything else on the volume is copied from the base, and this reads both volumes and
+    says so file by file, because a second difference would silently move with the first one into the
+    boot that is supposed to isolate it.
+    """
+    needs_sudo()
+    base = ROOT / "gpudrv.img"
+    if not base.is_file():
+        pytest.skip("the base channel image is not on this machine")
+    listing_base = _list_volume(base)
+    assert listing_base, "the base channel image holds no files to compare against"
+    channels = ROOT / "work" / "channels"
+    for variant in ALL_DELTAS:
+        image = channels / ("%s.img" % variant)
+        manifest = channels / ("%s.json" % variant)
+        if not (image.is_file() and manifest.is_file()):
+            pytest.skip("the %s channel image is not built on this machine" % variant)
+        listing = _list_volume(image)
+        assert set(listing) == set(listing_base), \
+            "%s differs from the base by which files exist, not only by their bytes" % variant
+        moved = [name for name in listing if listing[name] != listing_base[name]]
+        assert moved == ["drv/ati2mtag.sys"], \
+            "%s moves %s; a variant image may move exactly the driver" % (variant, moved)
+        record = json.loads(manifest.read_text())
+        assert listing["drv/ati2mtag.sys"] == record["candidate_sha256"]
+

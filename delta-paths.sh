@@ -24,10 +24,18 @@ delta_paths() {
       MANIFEST=$DELTA_ROOT/fixtures/graft/manifest-smc-fill-deploy.json
       EXPECT=$DELTA_ROOT/fixtures/graft/smc-fill-deploy.expect.json
       ;;
+    # The combined graft is a delta like the others in everything the builder and the verifier care
+    # about: a base, an op manifest, an expectation, and one file to move onto a channel. It is not a
+    # fourth experiment; it is the union whose parts each already have a boot behind them, which is
+    # why it belongs in this table rather than in a second path through the tooling.
+    combined)
+      MANIFEST=$DELTA_ROOT/fixtures/graft/manifest-combined-deploy.json
+      EXPECT=$DELTA_ROOT/fixtures/graft/combined-deploy.expect.json
+      ;;
     *) return 1;;
   esac
   BASE_BINARY=${BASE_BINARY:-$DELTA_ROOT/work/stageE/ati2mtag-s5_accessor_blob.sys}
   return 0
 }
 
-delta_names() { printf '%s\n' descriptor dispatch smc; }
+delta_names() { printf '%s\n' descriptor dispatch smc combined; }

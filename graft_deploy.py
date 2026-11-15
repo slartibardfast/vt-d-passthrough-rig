@@ -56,7 +56,15 @@ def main(argv=None):
     mounted = subprocess.run(
         ["mountpoint", "-q", str(args.mount)], capture_output=True).returncode == 0
     if not mounted:
-        raise ValueError(f"not a mounted filesystem: {args.mount}")
+        # Text that tells someone what to do next has to name the means, because a reader who is
+        # already stuck does not also have to invent the command. The offset is derived here rather
+        # than assumed, since a wrong offset mounts the MBR and reads a hash of nothing.
+        raise ValueError(
+            f"not a mounted filesystem: {args.mount}; attach a channel image read-only with "
+            f"`sudo mkdir -p {args.mount} && sudo mount -o ro,loop,offset=$(python3 "
+            f"{Path(__file__).resolve().parent / 'partition-offset.py'} <channel-image>) "
+            f"<channel-image> {args.mount}`, or build and record a variant image in one step with "
+            f"`./channel-image.sh --variant <name> --run <run-dir> --mount {args.mount}`")
     record = verify_files(args.built, args.mount, rollback)
     args.record.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.record.with_name(args.record.name + ".tmp")
