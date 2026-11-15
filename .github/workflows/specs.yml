@@ -31,7 +31,10 @@ jobs:
         run: |
           python -m venv venv
           ./venv/bin/pip install hypothesis pytest
-          ./venv/bin/python -m pytest tests/ -q
+          # -rs, so the lane states what it chose not to run. A skip the lane does not name
+          # is indistinguishable from a check that passed, and a lane must be able to say
+          # which of its artifacts it exercised.
+          ./venv/bin/python -m pytest tests/ -q -rs
       - name: obligations
         run: |
           cargo install --git https://github.com/connollydavid/host-lifecycle host-lifecycle

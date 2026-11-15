@@ -49,7 +49,7 @@ KD_ATI_DISPLAY = KD_CLEAN + "[19:27:58] MODULE LOAD pid=0x80800001 base=0xfffff9
 # bytes, doubled every character with a NUL, and then reported that the driver was never loaded.
 NTBTLOG = "\r\n".join([
     r"Windows XP System Boot Log",
-    r"System boot time: 4.750000",
+    r"System boot time: 4.75 s",
     r"Loaded driver \SystemRoot\System32\ntoskrnl.exe",
     r"Loaded driver \SystemRoot\System32\hal.dll",
     r"Did not load driver " + SERVICE_IMAGE,
