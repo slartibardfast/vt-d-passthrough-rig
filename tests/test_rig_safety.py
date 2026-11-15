@@ -4,6 +4,7 @@ import ast
 import os
 from pathlib import Path
 import shutil
+import signal
 import stat
 import subprocess
 import time
@@ -205,14 +206,31 @@ def _await(predicate, seconds=5):
     return False
 
 
+def _standin_guest(tmp_path):
+    """A live process whose kernel name is what a running QEMU's comm truncates to.
+
+    Two runner facts made this harder than it looks. `/bin/sleep` on the Ubuntu image is a
+    symlink into the coreutils multicall binary, so a copy of it inspects its own argv[0],
+    reports `coreutils: unknown program 'qemu-system-x86_64'`, and exits at once. And a shell
+    started with `-c` and a single command is replaced by that command, so the process turns
+    into `sleep` and the name the guard is looking for disappears. A copy of /bin/sh running
+    `sleep 60 & wait` keeps the name, stays alive, and dies on TERM. It gets its own process
+    group so the cleanup can take the child with it rather than orphaning a sleep.
+    """
+    fake = tmp_path / "qemu-system-x86_64"
+    shutil.copy("/bin/sh", fake)
+    proc = subprocess.Popen([str(fake), "-c", "sleep 60 & wait"], start_new_session=True)
+    time.sleep(0.4)
+    assert proc.poll() is None, "the stand-in died at once, so it proves nothing about the guard"
+    return proc
+
+
 def test_the_helper_sees_the_process_name_and_nothing_else(tmp_path):
     helper = ROOT / "guest-running.sh"
     assert _await(lambda: subprocess.run([str(helper), "check"],
                                          capture_output=True).returncode == 1), "no guest may be assumed"
 
-    fake = tmp_path / "qemu-system-x86_64"
-    shutil.copy("/bin/sleep", fake)
-    guest = subprocess.Popen([str(fake), "60"])
+    guest = _standin_guest(tmp_path)
     mention = subprocess.Popen(["/bin/bash", "-c", "exec sleep 60 # qemu-system-x86_64 -name xp64-driver"])
     try:
         assert _await(lambda: subprocess.run([str(helper), "check"],
@@ -227,7 +245,8 @@ def test_the_helper_sees_the_process_name_and_nothing_else(tmp_path):
         assert _await(lambda: subprocess.run([str(helper), "check"],
                                              capture_output=True).returncode == 1), "stop must actually stop it"
     finally:
-        for proc in (guest, mention):
-            if proc.poll() is None:
-                proc.kill()
-            proc.wait()
+        os.killpg(os.getpgid(guest.pid), signal.SIGKILL)
+        guest.wait()
+        if mention.poll() is None:
+            mention.kill()
+        mention.wait()

@@ -14,8 +14,12 @@ no offline read of an overlay can supply a key that never existed on disk.
 """
 
 import json
+import os
 import re
+import signal
 import struct
+import shutil
+import os
 import subprocess
 import sys
 import time
@@ -213,18 +217,22 @@ def test_the_runner_waits_for_the_guest_to_end_the_run():
 
 
 def _fake_named_like_qemu(tmp_path):
-    """A process whose kernel name is what a live QEMU's name truncates to.
+    """A live process whose kernel name is what a running QEMU's comm truncates to.
 
-    A Linux comm field holds 15 characters, so a running QEMU is named `qemu-system-x86`. The
-    guard has to look for that name and for nothing else. Matching the full command line was
-    measured refusing nine tests in one run, because a shell whose command line merely contains
-    the binary's name is caught by it, and the same idiom aimed at a signal would reach outside
-    the rig entirely.
+    Two runner facts made this harder than it looks. `/bin/sleep` on the Ubuntu image is a
+    symlink into the coreutils multicall binary, so a copy of it inspects its own argv[0],
+    reports `coreutils: unknown program 'qemu-system-x86_64'`, and exits at once. And a shell
+    started with `-c` and a single command is replaced by that command, so the process turns
+    into `sleep` and the name the guard is looking for disappears. A copy of /bin/sh running
+    `sleep 60 & wait` keeps the name, stays alive, and dies on TERM. It gets its own process
+    group so the cleanup can take the child with it rather than orphaning a sleep.
     """
-    import shutil
     fake = tmp_path / "qemu-system-x86_64"
-    shutil.copy("/bin/sleep", fake)
-    return subprocess.Popen([str(fake), "30"])
+    shutil.copy("/bin/sh", fake)
+    proc = subprocess.Popen([str(fake), "-c", "sleep 60 & wait"], start_new_session=True)
+    time.sleep(0.4)
+    assert proc.poll() is None, "the stand-in died at once, so it proves nothing about the guard"
+    return proc
 
 
 def test_a_guest_named_process_refuses_the_golden_build_and_a_mention_does_not(tmp_path):
@@ -239,7 +247,7 @@ def test_a_guest_named_process_refuses_the_golden_build_and_a_mention_does_not(t
         assert r.returncode == 2, "a QEMU-named process must stop a golden being taken from an open disk"
         assert "QEMU" in r.stdout + r.stderr
     finally:
-        proc.terminate()
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         proc.wait()
 
     mention = subprocess.Popen(["/bin/bash", "-c", "exec sleep 30 # qemu-system-x86_64 -name xp64-driver"])
