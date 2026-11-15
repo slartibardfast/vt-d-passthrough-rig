@@ -66,9 +66,13 @@ TABLE = out / "variant-matrix.tsv"
 READABLE = out / "variant-matrix.md"
 COLUMNS = ("run", "role", "nonce", "outcome", "lived_seconds", "candidate_sha256",
            "channel_image_sha256", "ops_manifest", "pp_status", "pp_sites", "pp_lines",
-           "pp_delta_vs_control", "display_path", "identity", "evidence_manifest")
+           "pp_delta_vs_control", "pp_same_as", "display_path", "identity", "evidence_manifest")
 CONTROL = "baseline"
 VARIANTS = ("descriptor", "dispatch", "smc")
+# The combined graft is a row too, once it has a boot. Its evidence is what the plan says the table is
+# for: each delta a combination stands on has to have a boot behind it, and the union's own boot is
+# what turns "the parts are each tested" into "and here is what the whole does".
+COMBINED = "combined"
 PP = re.compile(r"(?i)(?:PP_PowerPlay|PowerPlay)")
 SITE = re.compile(r"([a-z_]+\.c)\[(\d+)\]")
 MODULE = re.compile(r"MODULE LOAD.*?name=\\?WINDOWS\\?System32\\?([A-Za-z0-9_]+\.dll)", re.I)
@@ -197,32 +201,56 @@ def row(name, role):
     }
 
 
-def build():
-    rows = [row(CONTROL, "control")]
-    rows += [row(v, "variant") for v in VARIANTS]
-    rows = [r for r in rows if r]
-    control = next((r for r in rows if r["role"] == "control"), None)
-    base_counts = Counter()
-    if control:
-        for pair in control["pp_sites"].split(";"):
-            if "=" in pair:
-                site, count = pair.rsplit("=", 1)
-                base_counts[site] = int(count)
+def counts_of(row_data):
+    sites = Counter()
+    for pair in row_data["pp_sites"].split(";"):
+        if "=" in pair:
+            site, count = pair.rsplit("=", 1)
+            sites[site] = int(count)
+    return sites
+
+
+def derive(rows):
+    """The two columns that are relations between rows rather than properties of one run.
+
+    They are computed here, from the same function the verifier calls, because a column derived one
+    way when the table is written and another way when it is checked is a table that fails against
+    itself, and a check that fails against its own tooling gets ignored inside a week.
+    """
+    by_name = {r["run"]: r for r in rows}
+    control = by_name.get(CONTROL)
+    base_counts = counts_of(control) if control else Counter()
     for current in rows:
-        here = Counter()
-        for pair in current["pp_sites"].split(";"):
-            if "=" in pair:
-                site, count = pair.rsplit("=", 1)
-                here[site] = int(count)
         if current["role"] == "control":
             current["pp_delta_vs_control"] = "(the reference)"
             continue
+        here = counts_of(current)
         added = ["+%s x%d" % (s, n) for s, n in sorted(here.items()) if s not in base_counts]
         gone = ["-%s x%d" % (s, base_counts[s]) for s in sorted(base_counts) if s not in here]
         moved = ["~%s %d->%d" % (s, base_counts[s], here[s]) for s in sorted(here)
                  if s in base_counts and here[s] != base_counts[s]]
         notes = added + gone + moved
         current["pp_delta_vs_control"] = "; ".join(notes) if notes else "none"
+    # The union's row is worth little on its own; what matters is which part it behaves like. Measured
+    # on the real boots, the union's fingerprint equals the dispatch build's, which is the evidence
+    # that the other two parts are observable only once the routing byte reaches them.
+    union = by_name.get(COMBINED)
+    for current in rows:
+        current["pp_same_as"] = ""
+    if union:
+        same = [name for name in VARIANTS
+                if name in by_name
+                and by_name[name]["pp_delta_vs_control"] == union["pp_delta_vs_control"]
+                and union["pp_delta_vs_control"] not in ("", "none", "(the reference)")]
+        union["pp_same_as"] = ",".join(same) if same else "none"
+    return rows
+
+
+def build():
+    rows = [row(CONTROL, "control")]
+    rows += [row(v, "variant") for v in VARIANTS]
+    rows.append(row(COMBINED, "combined"))
+    rows = derive([r for r in rows if r])
     out.mkdir(parents=True, exist_ok=True)
     TABLE.write_text("\t".join(COLUMNS) + "\n"
                      + "".join("\t".join(str(r.get(c, "")) for c in COLUMNS) + "\n" for r in rows))
@@ -285,34 +313,19 @@ def verify():
               % (header, list(COLUMNS)), file=sys.stderr)
         return 1
     stored = [dict(zip(header, l.split("\t"))) for l in lines[1:]]
+    # Re-derived through the same `derive` the builder uses, over the whole fresh set, so a relation
+    # column is checked as a relation and not cell by cell out of context.
+    fresh_rows = derive([row(s["run"], s["role"]) for s in stored if row(s["run"], s["role"])])
+    fresh_by_name = {r["run"]: r for r in fresh_rows}
     bad = []
     for old in stored:
-        fresh = row(old["run"], old["role"])
+        fresh = fresh_by_name.get(old["run"])
         if fresh is None:
             bad.append("%s: the run directory is gone, so this row witnesses nothing" % old["run"])
             continue
         fresh.pop("identity_names", None)
         for column in COLUMNS:
             have, want = str(old.get(column, "")), str(fresh.get(column, ""))
-            if column == "pp_delta_vs_control":
-                here = Counter()
-                for pair in fresh["pp_sites"].split(";"):
-                    if "=" in pair:
-                        site, count = pair.rsplit("=", 1)
-                        here[site] = int(count)
-                control = next((s for s in stored if s["role"] == "control"), None)
-                base = Counter()
-                if control:
-                    for pair in control["pp_sites"].split(";"):
-                        if "=" in pair:
-                            site, count = pair.rsplit("=", 1)
-                            base[site] = int(count)
-                added = ["+%s x%d" % (s, n) for s, n in sorted(here.items()) if s not in base]
-                gone = ["-%s x%d" % (s, base[s]) for s in sorted(base) if s not in here]
-                moved = ["~%s %d->%d" % (s, base[s], here[s]) for s in sorted(here)
-                         if s in base and here[s] != base[s]]
-                want = "; ".join(added + gone + moved) or ("(the reference)"
-                                                           if fresh["role"] == "control" else "none")
             if have != want:
                 bad.append("%s: %s reads `%s` in the table and `%s` on disk"
                            % (old["run"], column, have[:60], want[:60]))

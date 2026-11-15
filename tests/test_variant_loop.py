@@ -33,14 +33,21 @@ PP_LINES = {
     "smc": ["[22:14:44] Error[PP_PowerPlay]: cislands_hwmgr.c[6696] Assertion x",
             "[22:14:44] Error[PP_PowerPlay]: cislands_hwmgr.c[6696] Assertion x",
             "[22:14:44] Error[PP_PowerPlay]: cislands_hwmgr.c[6179] Invalid ASIC family!"],
+    # The union's fixture lines follow the union's measured shape: what the whole changes is what the
+    # routing part changes, because the other two are observable only once the code reaches them.
+    "combined": ["[23:28:36] Error[PP_PowerPlay]: cislands_hwmgr.c[6696] Assertion x",
+                 "[23:28:36] Error[PP_PowerPlay]: cislands_hwmgr.c[6696] Assertion x",
+                 "[23:28:36] Error[PP_PowerPlay]: cislands_hwmgr.c[2660] No proper smc firmware"],
 }
-RUNS = ("baseline", "descriptor", "dispatch", "smc")
+RUNS = ("baseline", "descriptor", "dispatch", "smc", "combined")
 # The candidate file in a fixture holds bytes, and its digest is what every record in the tree cites,
 # so the digests are derived from the content rather than written out: a fixture whose file does not
 # hash to its own recorded digest would fail the very check it exists to exercise, for the wrong reason.
 CONTENT = {"baseline": b"the ungrafted base blob", "descriptor": b"the descriptor redirect",
-           "dispatch": b"the dispatch routing byte", "smc": b"the filled SMC table"}
-STEMS = {"descriptor": "descriptor-redirect", "dispatch": "dispatch-routing", "smc": "smc-fill"}
+           "dispatch": b"the dispatch routing byte", "smc": b"the filled SMC table",
+           "combined": b"the union of the three"}
+STEMS = {"descriptor": "descriptor-redirect", "dispatch": "dispatch-routing",
+         "smc": "smc-fill", "combined": "combined"}
 
 
 def digests():
@@ -122,10 +129,10 @@ def test_a_complete_tree_builds_a_row_per_run_and_verifies(tmp_path):
     tree = make_tree(tmp_path)
     r = run_tool("--build", tree=tree)
     assert r.returncode == 0, r.stdout + r.stderr
-    assert len(rows(tree)) == 4, table(tree)
+    assert len(rows(tree)) == 5, table(tree)
     v = run_tool("--verify", tree=tree)
     assert v.returncode == 0, v.stdout + v.stderr
-    assert "verdict: PASS (rows re-derived: 4)" in v.stdout, v.stdout
+    assert "verdict: PASS (rows re-derived: 5)" in v.stdout, v.stdout
 
 
 def test_the_verify_command_takes_the_directory_the_plan_names(tmp_path):
@@ -179,6 +186,31 @@ def test_a_row_whose_records_disagree_is_not_bound_and_gates(tmp_path):
     assert r.returncode == 1, r.stdout
     assert "do not all name one candidate" in r.stdout, r.stdout
     assert "delta-verify.sh" in r.stdout, "the remedy has to name the command that re-derives it"
+
+
+def test_the_union_row_says_which_part_it_behaves_like(tmp_path):
+    """The column the combined graft is judged on: does the whole behave like one of its parts?"""
+    tree = make_tree(tmp_path)
+    assert run_tool("--build", tree=tree).returncode == 0
+    by_name = {row["run"]: row for row in rows(tree)}
+    assert by_name["combined"]["pp_same_as"] == "dispatch", by_name["combined"]["pp_same_as"]
+    assert by_name["descriptor"]["pp_same_as"] == "", "only the union carries the comparison"
+    v = run_tool("--verify", tree=tree)
+    assert v.returncode == 0, v.stdout + v.stderr
+
+
+def test_a_relation_column_is_derived_the_same_way_it_is_checked(tmp_path):
+    """A column computed one way when written and another when checked fails against its own tooling.
+
+    Not hypothetical: the first version of the union column did exactly that, and the table refused to
+    verify the run it had just built.
+    """
+    tree = make_tree(tmp_path)
+    assert run_tool("--build", tree=tree).returncode == 0
+    before = table(tree)
+    assert run_tool("--verify", tree=tree).returncode == 0
+    assert run_tool("--build", tree=tree).returncode == 0
+    assert table(tree) == before, "rebuilding changed a cell that nothing on disk explains"
 
 
 def test_the_delta_column_reports_sites_added_removed_and_moved(tmp_path):
@@ -242,6 +274,27 @@ def test_a_control_booted_before_the_contract_is_explained_not_left_bare(tmp_pat
     assert "cislands_hwmgr.c[6179]" in readable, "the note has to name the baseline failures"
 
 
+@pytest.mark.skipif(not (ROOT / "work" / "runs" / "combined" / "run.json").is_file(),
+                    reason="the combined graft has not been booted on this machine")
+def test_the_union_boot_behaves_like_the_routing_part_on_the_real_tree():
+    """A measured property of the campaign's evidence, not of a fixture.
+
+    The union's PowerPlay fingerprint equals the dispatch build's, site for site and count for count,
+    which is the evidence that the descriptor redirect and the SMC fill change nothing observable while
+    the routing byte is what moves the driver's power path.
+    """
+    assert run_tool("--build").returncode == 0
+    lines = (ROOT / "work" / "runs" / "matrix" / "variant-matrix.tsv").read_text().rstrip("\n")\
+        .split("\n")
+    header = lines[0].split("\t")
+    by_name = {cells[0]: dict(zip(header, cells)) for cells in (l.split("\t") for l in lines[1:])}
+    assert by_name["combined"]["pp_same_as"] == "dispatch", by_name["combined"]["pp_same_as"]
+    assert by_name["combined"]["identity"] == "BOUND"
+    assert by_name["combined"]["candidate_sha256"].startswith("f6f2e6866892")
+    assert by_name["combined"]["pp_sites"] == by_name["dispatch"]["pp_sites"], \
+        "the union's fingerprint is no longer the routing part's"
+
+
 def test_the_real_matrix_is_current():
     """The table of record, if this machine holds the boots it summarises."""
     real = ROOT / "work" / "runs" / "matrix" / "variant-matrix.tsv"
@@ -250,5 +303,5 @@ def test_the_real_matrix_is_current():
     r = run_tool("--verify", "work/runs/matrix")
     assert r.returncode == 0, r.stdout + r.stderr
     assert "rows re-derived" in r.stdout, r.stdout
-    for variant in ("descriptor", "dispatch", "smc"):
+    for variant in ("descriptor", "dispatch", "smc", "combined"):
         assert variant in r.stdout, r.stdout
