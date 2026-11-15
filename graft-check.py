@@ -147,6 +147,20 @@ def verify(base_path, manifest_path, expectation_path, notes_path=None,
         if len(behavioral) != expect_int(expectation["changed_bytes"], "changed_bytes"):
             raise CheckError("behavioral changed-byte count mismatch")
 
+    # `within` is honest about where a diff may land and silent about which bytes did, which is the
+    # right trade for a donor fill that scatters tens of thousands of positions across a region: naming
+    # each resulting range would be unreadable and unreadable is unreviewable. A digest over the sorted
+    # positions is exact, one line long, and cheap to re-derive, so an expectation may bind one. When it
+    # does, the diff has to be exactly those positions and nothing else.
+    bound_positions = expectation.get("changed_positions_sha256")
+    if bound_positions is not None:
+        actual = hashlib.sha256(",".join(str(position) for position in sorted(behavioral))
+                                .encode()).hexdigest()
+        if actual != bound_positions:
+            raise CheckError(
+                "behavioral positions differ from the bound digest: %s over %d position(s), "
+                "expectation binds %s" % (actual[:16], len(behavioral), bound_positions[:16]))
+
     if notes_path is not None:
         try:
             notes = notes_path.read_bytes()

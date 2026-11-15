@@ -1,0 +1,58 @@
+{
+  "base_sha256": "8a77818ca9aeea19e6d5ece6bcde789211fcc6d54ee4966e265092bce7bd69a5",
+  "base_size": 8525824,
+  "changed_bytes": 47589,
+  "changed_fragments": 7836,
+  "changed_position_count": 47589,
+  "changed_positions_sha256": "4c7d50b6d0030d3013be063ecf356464e16ba396e89b55090c0478cf51cfed4a",
+  "changed_ranges": [
+    [
+      "0x8edf6",
+      "0x8edfb"
+    ],
+    [
+      "0xa9bcc",
+      "0xa9bd1"
+    ],
+    [
+      "0xa9bd2",
+      "0xa9bd3"
+    ],
+    [
+      "0xfeec6",
+      "0xfeec7"
+    ],
+    [
+      "0x2e28ab",
+      "0x2f1549"
+    ]
+  ],
+  "components": {
+    "descriptor-redirect": {
+      "changed_bytes": 11,
+      "output_sha256": "224f763c95084c06d0ee5084894eb6ad67fa2bca21c0205290b0c00ab9f3126f"
+    },
+    "dispatch-routing": {
+      "changed_bytes": 1,
+      "output_sha256": "7526ad57fcaccba79913075df81672c624c6f4610090fceed519152efb3aa0fa"
+    },
+    "smc-fill": {
+      "changed_bytes": 47577,
+      "output_sha256": "6505691f0589bd89b7adf2159692757eee0b3f2efa6e0ce834029d01af28b3ee"
+    }
+  },
+  "delta_id": "combined",
+  "deployable": true,
+  "diff_mode": "within",
+  "donors": {
+    "donor-smc-win7-14.4.bin": {
+      "sha256": "100355efec51d175afc3cfe2e4f0e03a3e6862f659773564c082a9a736cf167e",
+      "size": 60574
+    }
+  },
+  "notes_sha256": "4a2073cb44e4334e950d300b2ba8cdacee045071b245c13f308caf5791ef9e36",
+  "output_sha256": "f6f2e68668927610a116ebd912b633e57b7a24fb8894de48ac4324218804b666",
+  "route": "the union of the descriptor redirect, the dispatch routing and the SMC fill, with pe-checksum last and no operation that belongs to none of them",
+  "sum_of_components": 47589,
+  "union_positions": 47589
+}

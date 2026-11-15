@@ -1,0 +1,36 @@
+{
+  "delta_id": "combined",
+  "ops": [
+    {
+      "at": "0x8EDF5",
+      "bytes": "4c8d2d2c3f2600",
+      "op": "patch"
+    },
+    {
+      "at": "0xA9BCC",
+      "bytes": "4c89e89090",
+      "op": "patch"
+    },
+    {
+      "at": "0xA9BD1",
+      "bytes": "488d4008",
+      "op": "patch"
+    },
+    {
+      "at": "0xFEEC6",
+      "bytes": "79",
+      "op": "patch"
+    },
+    {
+      "at": "0x2E28AB",
+      "donor": "donor-smc-win7-14.4.bin",
+      "donor_at": 0,
+      "op": "fill",
+      "size": 60574
+    },
+    {
+      "op": "pe-checksum"
+    }
+  ],
+  "route": "union of the three banked single deltas"
+}
