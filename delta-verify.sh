@@ -17,21 +17,10 @@ done
   echo "usage: delta-verify.sh --delta descriptor|dispatch|smc --base IMAGE --run RUN_DIR" >&2
   exit 2
 }
-case "$DELTA" in
-  descriptor)
-    MANIFEST=$RIG/fixtures/graft/manifest-descriptor-redirect-deploy.json
-    EXPECT=$RIG/fixtures/graft/descriptor-redirect-deploy.expect.json
-    ;;
-  dispatch)
-    MANIFEST=$RIG/fixtures/graft/manifest-dispatch-routing-deploy.json
-    EXPECT=$RIG/fixtures/graft/dispatch-routing-deploy.expect.json
-    ;;
-  smc)
-    MANIFEST=$RIG/fixtures/graft/manifest-smc-fill-deploy.json
-    EXPECT=$RIG/fixtures/graft/smc-fill-deploy.expect.json
-    ;;
-  *) echo "unknown delta: $DELTA" >&2; exit 2 ;;
-esac
+# The table lives in delta-paths.sh so the builder and the verifier cannot disagree about which
+# manifest defines a variant.
+. "$RIG/delta-paths.sh"
+delta_paths "$DELTA" || { echo "unknown delta: $DELTA" >&2; exit 2; }
 
 BUILT=$RUN/ati2mtag.sys
 if [ -e "$BUILT" ]; then

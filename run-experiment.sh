@@ -41,7 +41,7 @@ set -uo pipefail
 
 RIG=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 GOLDEN="" CHANNEL="" NAME="" RUNS="$RIG/work/runs" TIMEOUT=600 PREPARE="" DRY="" TREE=""
-HOLD=240 NO_BOOTLOG=""
+HOLD=240 NO_BOOTLOG="" DEST="" FORCE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -51,6 +51,8 @@ while [ $# -gt 0 ]; do
     --runs) RUNS=${2:-}; shift 2;;
     --timeout) TIMEOUT=${2:-}; shift 2;;
     --hold) HOLD=${2:-}; shift 2;;
+    --dest) DEST=${2:-}; shift 2;;
+    --force) FORCE=1; shift;;
     --no-bootlog) NO_BOOTLOG=1; shift;;
     --prepare-only) PREPARE=1; shift;;
     --dry-run) DRY=1; shift;;
@@ -120,7 +122,27 @@ fi
 
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 NONCE="$NAME-$STAMP"
-RUN="$RUNS/$NONCE"
+# A variant task's verify command names a stable directory (`work/runs/descriptor`), because a table
+# that has to be re-derivable cannot cite a path whose name carries a clock. --dest places the run
+# there. The nonce is not changed by it: the run still signs its captures with name-and-stamp, so
+# two boots into one directory can never be confused for one another, and a second boot is refused
+# until the record it would overwrite is deliberately replaced.
+if [ -n "$DEST" ]; then
+  RUN="$DEST"
+  case "$RUN" in
+    /*) ;;
+    *) RUN="$RIG/$RUN";;
+  esac
+  if [ -e "$RUN/run.json" ] && [ -z "$FORCE" ]; then
+    printf '%s already holds a run; a second boot there would overwrite the record\n' "$RUN" >&2
+    printf 'its nonce is %s. Pass --force to replace it, or let the runner name the directory\n' \
+      "$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('nonce','?'))" \
+        "$RUN/run.json" 2>/dev/null || printf 'unreadable')" >&2
+    exit 2
+  fi
+else
+  RUN="$RUNS/$NONCE"
+fi
 OVERLAY="$RUN/overlay.qcow2"
 RUN_CHANNEL="$RUN/gpudrv.img"
 RUN_JSON="$RUN/run.json"
@@ -147,10 +169,17 @@ prepare() {
   mkdir -p "$RUN"
   qemu-img create -f qcow2 -b "$GOLDEN" -F qcow2 "$OVERLAY" >/dev/null || return 2
   cp "$CHANNEL" "$RUN_CHANNEL" || return 2
-  python3 - "$RUN_JSON" "$GOLDEN" "$OVERLAY" "$RUN_CHANNEL" "$NONCE" "$NAME" "$TIMEOUT" <<'PY'
+  # The manifest travels with the image. A run that cites a manifest by absolute path is citing a
+  # file that can be edited or removed later, and its record then cannot be re-read; a copy inside
+  # the run directory is the same bytes forever, and the run is what a later session has.
+  if [ -f "${CHANNEL%.img}.json" ]; then
+    cp "${CHANNEL%.img}.json" "$RUN/channel-manifest.json" || return 2
+  fi
+  python3 - "$RUN_JSON" "$GOLDEN" "$OVERLAY" "$RUN_CHANNEL" "$NONCE" "$NAME" "$TIMEOUT" \
+    "$CHANNEL" <<'PY'
 import datetime, hashlib, json, os, sys
-out, golden, overlay, channel, nonce, name, timeout = sys.argv[1:8]
-json.dump({
+out, golden, overlay, channel, nonce, name, timeout, channel_source = sys.argv[1:9]
+data = {
     "name": name,
     "nonce": nonce,
     "created": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -158,10 +187,34 @@ json.dump({
     "golden_sha256": hashlib.sha256(open(golden, "rb").read()).hexdigest(),
     "overlay": os.path.abspath(overlay),
     "channel": os.path.abspath(channel),
+    "channel_source": os.path.abspath(channel_source),
     "channel_sha256": hashlib.sha256(open(channel, "rb").read()).hexdigest(),
     "timeout_seconds": int(timeout),
     "outcome": "prepared",
-}, open(out, "w"), indent=2, sort_keys=True)
+}
+# A channel image built by channel-image.sh has a manifest beside it naming the candidate driver it
+# holds. Carrying that hash into the run record is what lets `delta-verify.sh` say this boot ran the
+# file that build claimed, rather than whatever file happened to be on the volume. A manifest that
+# names no candidate is a defect in the build, so it stops the run rather than passing quietly.
+channel_manifest = os.path.splitext(os.path.abspath(channel_source))[0] + ".json"
+if os.path.isfile(channel_manifest):
+    try:
+        record = json.load(open(channel_manifest))
+    except json.JSONDecodeError as exc:
+        raise SystemExit("the channel manifest %s does not parse: %s" % (channel_manifest, exc))
+    if "candidate_sha256" not in record:
+        raise SystemExit("%s names no candidate_sha256, so this boot cannot be bound to a build"
+                         % channel_manifest)
+    for key in ("candidate_sha256", "variant", "ops_manifest", "rollback_sha256"):
+        if key in record:
+            data[key] = record[key]
+    data["channel_manifest"] = channel_manifest
+    if os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(channel)), "channel-manifest.json")):
+        data["channel_manifest_copy"] = os.path.join(
+            os.path.dirname(os.path.abspath(channel)), "channel-manifest.json")
+        data["channel_manifest_sha256"] = hashlib.sha256(
+            open(channel_manifest, "rb").read()).hexdigest()
+json.dump(data, open(out, "w"), indent=2, sort_keys=True)
 PY
 }
 

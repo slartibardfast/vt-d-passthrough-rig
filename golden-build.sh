@@ -19,6 +19,17 @@
 # Usage: golden-build.sh --from <raw-or-image> --to <dir> [--name NAME] [--force]
 #                        [--provenance <text>]
 #        golden-build.sh --amend <golden> [--source <image>] [--provenance <text>]
+#        golden-build.sh --verify <dir> [--no-state]
+#
+# Why --verify exists. A golden is the read-only parent of every run, and two things are asserted
+# about it: that the file is what its manifest says, and that it carries the settled state every run
+# is written against. The first is cheap and offline, so it always runs. The second has to read the
+# registry inside the image, so it runs unless --no-state says otherwise, and it refuses to answer
+# while a guest holds the image rather than guessing.
+set -uo pipefail
+
+RIG=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+FROM="" TO="" NAME="os" FORCE="" AMEND="" SOURCE="" PROVENANCE="" VERIFY="" NO_STATE=""
 #
 # Why --amend exists. A manifest is the record of what a golden is, and the honest answer includes
 # how its source disk came to hold those bytes. The first golden of this campaign was converted from
@@ -39,10 +50,30 @@ while [ $# -gt 0 ]; do
     --amend) AMEND=${2:-}; shift 2;;
     --source) SOURCE=${2:-}; shift 2;;
     --provenance) PROVENANCE=${2:-}; shift 2;;
+    --verify) VERIFY=${2:-}; shift 2;;
+    --no-state) NO_STATE=1; shift;;
     --force) FORCE=1; shift;;
     *) printf 'unknown argument: %s\n' "$1" >&2; exit 2;;
   esac
 done
+
+if [ -n "$VERIFY" ]; then
+  test -d "$VERIFY" || { printf 'no such golden directory: %s\n' "$VERIFY" >&2; exit 2; }
+  status=0
+  printf '=== does each golden match its manifest? ===\n'
+  python3 "$RIG/golden_verify.py" "$VERIFY" || status=1
+  if [ -n "$NO_STATE" ]; then
+    printf '\nskipped the settled-state read (--no-state): the digests above say the file is what the\n'
+    printf 'manifest names, and say nothing about what the registry inside it holds\n'
+    exit $status
+  fi
+  printf '\n=== does each golden carry the settled state a run is written against? ===\n'
+  for golden in "$VERIFY"/*.qcow2; do
+    [ -f "$golden" ] || continue
+    python3 "$RIG/golden-state.py" --golden "$golden" || status=1
+  done
+  exit $status
+fi
 
 if [ -n "$AMEND" ]; then
   test -f "$AMEND" || { printf 'no such golden to amend: %s\n' "$AMEND" >&2; exit 2; }

@@ -50,18 +50,7 @@ for f in "$OSD" "$DRV"; do
 done
 mkdir -p "$RUN/replaced"
 
-offset_of_first_partition() {
-  python3 - "$1" <<'PY'
-import struct, sys
-with open(sys.argv[1], "rb") as f:
-    f.seek(0x1BE)
-    entry = f.read(16)
-start = struct.unpack("<I", entry[8:12])[0]
-if start == 0:
-    raise SystemExit("no first partition entry")
-print(start * 512)
-PY
-}
+offset_of_first_partition() { python3 "$RIG/partition-offset.py" "$1"; }
 
 DOFF=$(offset_of_first_partition "$DRV") || exit 2
 POFF=$(offset_of_first_partition "$OSD") || exit 2
