@@ -157,6 +157,11 @@ RUN_JSON="$RUN/run.json"
 # go, which is the shape of a good rule applied past a limit nobody had written down.
 KD_SOCK="/tmp/opencode/kd-$NONCE.sock"
 SEABIOS_LOG="$RUN/seabios.log"
+# kdc.py appends to its catch log only when it catches something, so a quiet boot would leave no
+# file at all and a grader would have to guess whether nothing was caught or nothing was collected.
+# An empty file is the answer to that question, written down. It is created inside prepare, because
+# the run directory does not exist before prepare makes it.
+COLLECTOR_CATCHES="$RUN/captor-catches.log"
 
 if [ "${#KD_SOCK}" -gt 100 ]; then
   printf 'the KD socket path is %s bytes and the kernel caps AF_UNIX at 108: %s\n' \
@@ -167,6 +172,7 @@ fi
 
 prepare() {
   mkdir -p "$RUN"
+  touch "$COLLECTOR_CATCHES" || return 2
   qemu-img create -f qcow2 -b "$GOLDEN" -F qcow2 "$OVERLAY" >/dev/null || return 2
   cp "$CHANNEL" "$RUN_CHANNEL" || return 2
   # The manifest travels with the image. A run that cites a manifest by absolute path is citing a
@@ -281,7 +287,7 @@ if [ -z "$NO_BOOTLOG" ]; then
 fi
 
 KD_SOCK="$KD_SOCK" SEABIOS_LOG="$SEABIOS_LOG" KDC_LOG="$RUN/kdc-live.log" \
-  KDC_MODULES="$RUN/modules.txt" KDC_CATCHES="$RUN/captor-catches.log" \
+  KDC_MODULES="$RUN/modules.txt" KDC_CATCHES="$COLLECTOR_CATCHES" \
   WORK="$OVERLAY" CHANNEL="$RUN_CHANNEL" FORMAT=qcow2 CACHE=writeback GLINET=none \
   LOGDIR="$RUN" LOG="$RUN/driver-stage.log" "$RIG/start-boot-detached.sh" || {
     printf 'the launcher refused to start; the overlay and the channel copy stay for inspection\n' >&2
@@ -411,4 +417,13 @@ fi
 
 printf 'run directory: %s\n' "$RUN"
 printf 'outcome: %s\n' "$OUTCOME"
+
+# The run's own contract, derived from the evidence this boot left behind. It is a file rather than
+# a heredoc because every field in it is a claim, and a claim a test cannot call is a claim no later
+# session can re-derive. `pp_verdict.py`, the campaign's strict PowerPlay grader, refuses to answer
+# unless a run record carries eight named fields, which is exactly the shape of temptation that turns
+# into typing constants and moving on.
+python3 "$RIG/run_contract.py" "$RUN_JSON" "$RUN" "$NONCE" "$OUTCOME" ||
+  printf 'the run could not write its own contract; its record is incomplete\n' >&2
+
 printf 'grade it: ./load-verify.py --run %s\n' "$RUN"
