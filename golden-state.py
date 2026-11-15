@@ -236,8 +236,8 @@ LABELS = [
     ("per-adapter InstalledDisplayDrivers", "dev_drivers", "./registration_graft.py apply <hive>"),
     ("per-adapter VgaCompatible", "dev_vgacompat", "1 leaves the adapter treated as VGA"),
     ("per-adapter Video Service", "dev_service", "./registration_graft.py apply <hive>"),
-    ("drive letter pinned", "letters_pinned", "./hive-pin.py letters <hive> <channel> reads it; "
-                                               "./hive-pin.py write pins it"),
+    ("drive letter pinned", "letters_pinned", "python3 hive-pin.py letters <hive> <channel> reads "
+                                               "it; python3 hive-pin.py write pins it"),
 ]
 
 
@@ -300,8 +300,8 @@ def main():
         for line in bad:
             print("  %s" % line)
         print("  remedy: the settings are written offline by ./offline-guest-settings.sh, "
-              "./hive-pin.py and ./registration_graft.py, and witnessed by a boot through "
-              "./run-experiment.sh")
+              "python3 hive-pin.py and python3 registration_graft.py, and witnessed by a boot "
+              "through ./run-experiment.sh, which is executable")
         return 1
     print("verdict: PASS (a run on this golden starts from the settled state)")
 
