@@ -289,3 +289,28 @@ def test_a_missing_qemu_img_stops_a_run_before_it_creates_anything(tmp_path):
     assert r.returncode == 2, r.stdout + r.stderr
     assert "qemu-img" in r.stderr and "qemu-utils" in r.stderr, r.stderr
     assert not (tmp_path / "work").exists()
+
+
+def test_a_relative_golden_still_yields_an_overlay_that_backs_onto_it(tmp_path):
+    """`qemu-img create -b` resolves a relative path against the new image's directory.
+
+    The first real control run passed the golden as work/goldens/os.qcow2 and the overlay
+    creation looked for it inside the run directory, so the boot died on a file that was plainly
+    present. A test that always passes an absolute path could never have caught that.
+    """
+    golden = tmp_path / "goldens" / "os.qcow2"
+    golden.parent.mkdir(parents=True)
+    subprocess.run(["qemu-img", "create", "-f", "qcow2", str(golden), "64M"], check=True,
+                   capture_output=True)
+    channel = tmp_path / "gpudrv.img"
+    channel.write_bytes(b"channel")
+    runs = tmp_path / "work" / "runs"
+    rel = os.path.relpath(golden, ROOT)
+    r = subprocess.run([str(ROOT / "run-experiment.sh"), "--golden", rel, "--channel", str(channel),
+                        "--name", "relpath", "--runs", str(runs), "--prepare-only", "--no-bootlog"],
+                       capture_output=True, text=True, cwd=str(ROOT))
+    assert r.returncode == 0, r.stdout + r.stderr
+    overlay = next(runs.glob("relpath-*/overlay.qcow2"))
+    info = json.loads(subprocess.run(["qemu-img", "info", "--output=json", str(overlay)],
+                                     capture_output=True, text=True, check=True).stdout)
+    assert Path(info["backing-filename"]).resolve() == golden.resolve(), info

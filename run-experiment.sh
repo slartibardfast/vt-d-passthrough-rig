@@ -97,6 +97,13 @@ if "$RIG/guest-running.sh" check >/dev/null; then
 fi
 test -f "$GOLDEN" || { printf 'no golden: %s\n' "$GOLDEN" >&2; exit 2; }
 test -f "$CHANNEL" || { printf 'no channel image: %s\n' "$CHANNEL" >&2; exit 2; }
+# Both paths become absolute here, and that is not cosmetic. `qemu-img create -b` resolves a
+# relative backing path against the directory of the image being created, not the working
+# directory, so a golden given as work/goldens/os.qcow2 was looked for inside the run directory
+# and the first real control run died with "Could not open backing image" on a file that was
+# plainly there. The comparison below needs absolute paths for the same reason.
+GOLDEN=$(realpath "$GOLDEN")
+CHANNEL=$(realpath "$CHANNEL")
 
 GOLDEN_INFO=$(qemu-img info --output=json "$GOLDEN")
 GOLDEN_FMT=$(printf '%s' "$GOLDEN_INFO" | python3 -c 'import json,sys; print(json.load(sys.stdin)["format"])')
