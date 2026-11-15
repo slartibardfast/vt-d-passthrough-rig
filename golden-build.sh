@@ -33,13 +33,9 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$FROM" ] && [ -n "$TO" ] || { printf 'usage: golden-build.sh --from <image> --to <dir> [--name NAME] [--force]\n' >&2; exit 2; }
 test -f "$FROM" || { printf 'no such source image: %s\n' "$FROM" >&2; exit 2; }
-# The QEMU guard is a process-name match, not a command-line match. A Linux comm field is
-# truncated to 15 characters, so a live QEMU is named "qemu-system-x86", and that name cannot
-# be matched by accident. Matching the command line instead was measured here: a shell whose
-# command line merely contains the binary's name is matched by it, which made golden-build.sh
-# refuse nine tests in one run for no reason that existed on the machine, and the same idiom
-# aimed at pkill would signal whatever mentioned the name, including the caller.
-if pgrep -x qemu-system-x86 >/dev/null; then
+# The guest check comes from guest-running.sh, which holds the rule and the reason for it:
+# a command-line match was measured catching shells that only mention the binary.
+if "$RIG/guest-running.sh" check >/dev/null; then
   printf 'a QEMU is running: its cache holds writes this image does not. Shut it down first.\n' >&2
   exit 2
 fi

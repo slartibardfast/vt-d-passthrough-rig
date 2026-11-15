@@ -205,9 +205,11 @@ def test_the_guest_writes_the_volatile_video_map_during_the_run():
 
 
 def test_the_runner_waits_for_the_guest_to_end_the_run():
+    """The host waits on the guest exiting, never on a FAT volume lagging behind it."""
     src = (ROOT / "run-experiment.sh").read_text()
-    assert "pgrep" in src, "the host waits on QEMU exiting rather than polling a FAT volume"
-    assert re.search(r"timeout", src), "a guest that cannot shut down must be recorded as a crash"
+    assert re.search(r'"\$RIG/guest-running\.sh" wait "\$TIMEOUT"', src)
+    assert re.search(r'"\$RIG/guest-running\.sh" stop', src), "a guest that cannot shut down must be stopped and recorded"
+    assert "timeout-killed" in src
 
 
 def _fake_named_like_qemu(tmp_path):

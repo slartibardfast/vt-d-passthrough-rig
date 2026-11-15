@@ -31,7 +31,7 @@ RUN=$RIG/work/runs/offline-settings-$(date -u +%Y%m%dT%H%M%SZ)
 for f in "$OSD" "$DRV" "$SIF"; do
   test -e "$f" || { printf 'missing %s\n' "$f"; exit 2; }
 done
-if pgrep -f '[q]emu-system-x86_64' >/dev/null; then
+if "$RIG/guest-running.sh" check >/dev/null; then
   printf 'a QEMU is running: the guest has these hives open. Shut it down first.\n'
   exit 2
 fi

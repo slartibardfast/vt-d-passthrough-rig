@@ -66,13 +66,9 @@ fi
 [ -n "$GOLDEN" ] && [ -n "$CHANNEL" ] && [ -n "$NAME" ] || {
   printf 'usage: run-experiment.sh --golden <qcow2> --channel <img> --name NAME [--timeout S] [--prepare-only] [--dry-run]\n' >&2
   exit 2; }
-# The QEMU guard is a process-name match, not a command-line match. A Linux comm field is
-# truncated to 15 characters, so a live QEMU is named "qemu-system-x86", and that name cannot
-# be matched by accident. Matching the command line instead was measured here: a shell whose
-# command line merely contains the binary's name is matched by it, which made golden-build.sh
-# refuse nine tests in one run for no reason that existed on the machine, and the same idiom
-# aimed at pkill would signal whatever mentioned the name, including the caller.
-if pgrep -x qemu-system-x86 >/dev/null; then
+# The guest check comes from guest-running.sh, which holds the rule and the reason for it:
+# a command-line match was measured catching shells that only mention the binary.
+if "$RIG/guest-running.sh" check >/dev/null; then
   printf 'a QEMU is already running; one guest at a time on this GPU and disk pair\n' >&2
   exit 2
 fi
@@ -155,22 +151,16 @@ WORK="$OVERLAY" CHANNEL="$RUN_CHANNEL" FORMAT=qcow2 CACHE=writeback GLINET=none 
     printf 'the launcher refused to start; the overlay and the channel copy stay for inspection\n' >&2
     exit 2; }
 
-START=$(date -u +%s)
 amend "started=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "outcome=booting"
-OUTCOME=""
-while :; do
-  if ! pgrep -x qemu-system-x86 >/dev/null; then OUTCOME=clean-shutdown; break; fi
-  NOW=$(date -u +%s)
-  if [ $((NOW - START)) -gt "$TIMEOUT" ]; then
-    printf 'timeout after %ss: a guest that bugchecked cannot end its own run\n' "$TIMEOUT"
-    pkill -TERM -x qemu-system-x86 || true
-    sleep 20
-    pgrep -x qemu-system-x86 >/dev/null && pkill -KILL -x qemu-system-x86 || true
-    OUTCOME=timeout-killed
-    break
-  fi
-  sleep 5
-done
+# Whether the guest ended its own run, and how to stop one that will not, belong to
+# guest-running.sh, so the rig holds one answer rather than a per-script copy.
+if "$RIG/guest-running.sh" wait "$TIMEOUT"; then
+  OUTCOME=clean-shutdown
+else
+  printf 'timeout after %ss: a guest that bugchecked cannot end its own run\n' "$TIMEOUT"
+  "$RIG/guest-running.sh" stop
+  OUTCOME=timeout-killed
+fi
 amend "ended=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "outcome=$OUTCOME" "crash_suspected=$([ "$OUTCOME" = timeout-killed ] && echo true || echo false)"
 
 # The read-back: the overlay holds everything the guest wrote, and nothing else needs the

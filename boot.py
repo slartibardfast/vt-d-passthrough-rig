@@ -61,7 +61,7 @@ def main():
     # the clean slate
     sh("pkill", "-xf", "python3 kdc.py")
     time.sleep(1)
-    sh("pkill", "-x", "qemu-system-x86")
+    sh(os.path.join(RIG, "guest-running.sh"), "stop")   # one home for how a guest is stopped
     # the VFIO group teardown lags the process exit - wait until it frees,
     # or the new QEMU fails with "Device or resource busy" (measured)
     for _ in range(30):

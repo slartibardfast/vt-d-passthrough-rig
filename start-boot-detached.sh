@@ -15,7 +15,7 @@ LOGDIR=${LOGDIR:-/tmp/opencode}
 DISK=${WORK:-/home/dconnolly/xp64-rig/xp64-gpu.raw}
 
 test -b "$DISK" 2>/dev/null || test -f "$DISK" || { printf 'no such disk: %s\n' "$DISK"; exit 2; }
-if pgrep -f '[q]emu-system-x86_64' >/dev/null; then
+if "$RIG/guest-running.sh" check >/dev/null; then
   printf 'a QEMU is already running; refusing to start a second one on this GPU\n'
   exit 2
 fi

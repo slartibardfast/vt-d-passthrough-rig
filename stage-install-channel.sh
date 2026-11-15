@@ -20,7 +20,7 @@ OSD=${1:-/home/dconnolly/xp64-rig/xp64-gpu.raw}
 DRV=${2:-$RIG/gpudrv.img}
 RUN=$RIG/work/runs/stage-channel-$(date -u +%Y%m%dT%H%M%SZ)
 
-if pgrep -f '[q]emu-system-x86_64' >/dev/null; then
+if "$RIG/guest-running.sh" check >/dev/null; then
   printf 'a QEMU is running: these images are open. Shut the guest down first.\n'
   exit 2
 fi

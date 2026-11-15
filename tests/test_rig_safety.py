@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import stat
 import subprocess
+import time
 
 import pytest
 
@@ -163,3 +164,70 @@ def test_driver_refuses_the_rejected_install_disk(tmp_path):
     assert result.returncode != 0
     assert "refusing wrong or rollback disk" in result.stderr
     assert not marker.exists()
+
+
+# --- how the rig answers "is a guest alive" -------------------------------------------
+#
+# A command-line match for the QEMU binary was measured catching shells that merely mention
+# the name, which makes a guard refuse work that has no conflicting guest and makes a signal
+# reach processes the rig does not own. The name form is the only safe one, and it lives in
+# one file so no script can drift back.
+
+GUARD_CALLERS = ["boot.py", "start-boot-detached.sh", "offline-guest-settings.sh", "stage-install-channel.sh",
+                 "offline-registration.sh", "golden-build.sh", "run-experiment.sh"]
+
+
+def test_no_script_matches_a_guest_by_its_command_line():
+    offenders = []
+    for script in sorted(list(ROOT.glob("*.sh")) + list(ROOT.glob("*.py"))):
+        if script.name == "guest-running.sh":
+            continue
+        for number, line in enumerate(script.read_text(errors="replace").splitlines(), 1):
+            lowered = line.lower()
+            if "emu-system" in lowered and ("pgrep" in lowered or "pkill" in lowered) \
+                    and (" -f" in lowered or " -xf" in lowered or "--full" in lowered):
+                offenders.append("%s:%d: %s" % (script.name, number, line.strip()))
+    assert offenders == [], "match the guest through guest-running.sh:\n" + "\n".join(offenders)
+
+
+def test_every_guard_of_a_live_disk_routes_through_the_helper():
+    for name in GUARD_CALLERS:
+        assert "guest-running.sh" in (ROOT / name).read_text(), "%s decides on its own" % name
+    assert "qemu-system" not in (ROOT / "boot.py").read_text(), "the process name belongs to the helper"
+
+
+def _await(predicate, seconds=5):
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def test_the_helper_sees_the_process_name_and_nothing_else(tmp_path):
+    helper = ROOT / "guest-running.sh"
+    assert _await(lambda: subprocess.run([str(helper), "check"],
+                                         capture_output=True).returncode == 1), "no guest may be assumed"
+
+    fake = tmp_path / "qemu-system-x86_64"
+    shutil.copy("/bin/sleep", fake)
+    guest = subprocess.Popen([str(fake), "60"])
+    mention = subprocess.Popen(["/bin/bash", "-c", "exec sleep 60 # qemu-system-x86_64 -name xp64-driver"])
+    try:
+        assert _await(lambda: subprocess.run([str(helper), "check"],
+                                             capture_output=True).returncode == 0), "a live guest must be seen"
+        pids = subprocess.run([str(helper), "pids"], capture_output=True, text=True).stdout.split()
+        assert str(guest.pid) in pids
+        assert str(mention.pid) not in pids, "a command line that mentions the name is not a guest"
+
+        assert subprocess.run([str(helper), "wait", "1"], capture_output=True).returncode == 1
+
+        assert subprocess.run([str(helper), "stop", "6"], capture_output=True).returncode == 0
+        assert _await(lambda: subprocess.run([str(helper), "check"],
+                                             capture_output=True).returncode == 1), "stop must actually stop it"
+    finally:
+        for proc in (guest, mention):
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
