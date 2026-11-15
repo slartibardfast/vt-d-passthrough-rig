@@ -11,6 +11,23 @@
 set -uo pipefail
 
 RIG=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+
+# No argument may start a machine. `--help` used to boot one: this script does its work by
+# running, so a caller that probed the interface got a live guest instead of a usage line.
+# That happened twice on 2026-11-15, and both guests had to be stopped mid-boot. Flags are
+# refused here, before any mount, any hive and any QEMU; only a plain path is an argument.
+case "${1:-}" in
+  -h|--help)
+    printf 'usage: %s\n' 'start-boot-detached.sh takes no arguments; WORK=<disk-image> selects the disk' >&2
+    exit 0;;
+esac
+for arg in "$@"; do
+  case "$arg" in
+    -*)
+      printf 'unknown argument: %s\nusage: %s\n' "$arg" 'start-boot-detached.sh takes no arguments; WORK=<disk-image> selects the disk' >&2
+      exit 2;;
+  esac
+done
 LOGDIR=${LOGDIR:-/tmp/opencode}
 DISK=${WORK:-/home/dconnolly/xp64-rig/xp64-gpu.raw}
 

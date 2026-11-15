@@ -250,3 +250,60 @@ def test_the_helper_sees_the_process_name_and_nothing_else(tmp_path):
         if mention.poll() is None:
             mention.kill()
         mention.wait()
+
+
+# --- how the rig's entry points answer a question -----------------------------------------
+#
+# These scripts do their work by running: one of them boots a guest. So the mode bit and the
+# treatment of a flag are both part of the interface, and each was wrong here on 2026-11-15.
+# `./offline-guest-settings.sh` failed with `Permission denied` while `bash` of the same file
+# worked, because the file carried a shebang and mode 644, and every test that shells through
+# bash stayed green. And `./start-boot-detached.sh --help` started a KDC and a QEMU on the real
+# GPU, because the script took no arguments and did nothing with the ones it was given.
+
+
+def test_every_shebang_script_in_the_rig_is_executable():
+    unrunnable = []
+    for script in sorted(ROOT.glob("*.sh")):
+        if script.read_text(errors="replace").startswith("#!") and not os.access(script, os.X_OK):
+            unrunnable.append(script.name)
+    assert unrunnable == [], "chmod +x, then git add, so the mode is recorded: " + ", ".join(unrunnable)
+
+
+ENTRY_POINTS = ["offline-guest-settings.sh", "stage-install-channel.sh", "start-boot-detached.sh"]
+
+
+def _ask(script, flag, tmp_path):
+    """Ask an entry point a question in a sandbox where it cannot do its work.
+
+    The point of the sandbox is that a regression in the guard cannot boot a guest from inside
+    the test run: PATH holds nothing, so `sudo`, `mount` and `python3 kdc.py` all fail, and
+    `WORK` names a disk image that does not exist, which is the check the boot script makes
+    before it reaches for a machine.
+    """
+    empty = tmp_path / "empty-path"
+    empty.mkdir()
+    env = {"PATH": str(empty), "HOME": str(tmp_path), "WORK": str(tmp_path / "no-such-disk.raw")}
+    return subprocess.run(["/bin/bash", str(ROOT / script), flag], capture_output=True,
+                          text=True, cwd=str(tmp_path), env=env)
+
+
+@pytest.mark.parametrize("script", ENTRY_POINTS)
+def test_help_answers_with_usage_and_nothing_else(script, tmp_path):
+    r = _ask(script, "--help", tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "usage:" in r.stderr.lower(), r.stderr
+    assert "kdc pid" not in r.stdout and "launcher pid" not in r.stdout, "a flag started a machine"
+
+
+@pytest.mark.parametrize("script", ENTRY_POINTS)
+def test_an_unknown_flag_is_refused_rather_than_ignored(script, tmp_path):
+    r = _ask(script, "--no-such-flag", tmp_path)
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "unknown argument" in r.stderr, r.stderr
+
+
+def test_the_probes_left_no_machine_running():
+    helper = ROOT / "guest-running.sh"
+    assert subprocess.run([str(helper), "check"], capture_output=True).returncode == 1, (
+        "asking an entry point for usage must not leave a guest alive")
