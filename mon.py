@@ -3,11 +3,12 @@
 
 Usage: mon.py <command> [<command> ...]
 """
+import os
 import socket
 import sys
 import time
 
-SOCK = "/home/dconnolly/xp64-rig/mon.sock"
+SOCK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mon.sock")
 
 
 def run(cmds, wait=2.0):

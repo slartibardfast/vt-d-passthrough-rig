@@ -1,4 +1,5 @@
 # Type an arbitrary string into the guest via QEMU's monitor sendkey.
+import os
 import socket, sys, time
 NAMED = {' ': 'spc', ':': 'shift-semicolon', '\\': 'backslash', '.': 'dot',
          '/': 'slash', '-': 'minus', '=': 'equal', ',': 'comma', '.': 'dot',
@@ -13,7 +14,7 @@ def keys_for(ch):
         return [ch] if ch.islower() else [f'shift-{ch.lower()}']
     return None
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-s.connect('/home/dconnolly/xp64-rig/mon.sock'); s.settimeout(5)
+s.connect(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mon.sock")); s.settimeout(5)
 for ch in sys.argv[1]:
     ks = keys_for(ch)
     if ks is None:

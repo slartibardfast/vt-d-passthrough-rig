@@ -5,12 +5,13 @@ The menu auto-starts after a short countdown, so the choice has to be made the m
 it appears. Timing guesses missed it twice; this detects it instead: the menu is
 720x400 text with a small but clearly non-zero amount of ink on it.
 """
+import os
 import socket
 import sys
 import time
 from PIL import Image
 
-SOCK = "/home/dconnolly/xp64-rig/mon.sock"
+SOCK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mon.sock")
 SHOT = "/home/dconnolly/xp64-rig/probe.ppm"
 
 

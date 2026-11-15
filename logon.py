@@ -19,13 +19,14 @@ catch.
 
 Usage: logon.py [tile_x tile_y]
 """
+import os
 import hashlib
 import socket
 import subprocess
 import sys
 import time
 
-SOCK = "/home/dconnolly/xp64-rig/mon.sock"
+SOCK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mon.sock")
 
 # Centre of the Administrator tile on the 1024x768 logon screen, read off a screendump.
 TILE = (430, 190)

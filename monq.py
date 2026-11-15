@@ -4,11 +4,12 @@
 mon.py breaks on a trailing "(qemu)" but the monitor echoes each character as it is
 typed, so that matches mid-echo. This drains the socket until it stops producing.
 """
+import os
 import socket
 import sys
 import time
 
-SOCK = "/home/dconnolly/xp64-rig/mon.sock"
+SOCK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mon.sock")
 
 
 def drain(s, quiet=1.5, limit=12.0):
