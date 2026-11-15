@@ -590,3 +590,34 @@ def test_golden_settings_sets_all_three_and_proves_each_from_a_second_mount(tmp_
     assert (rec / "boot.ini.after").read_text().count("/bootlog") == 1
     assert "inherited trigger" in (rec / "letters.bat.before").read_text()
     assert (rec / "letters.bat.after").read_bytes() == HOOK.read_bytes()
+
+
+def test_the_kd_socket_stays_inside_the_kernels_path_limit(tmp_path):
+    """A per-run socket is the rule; the run directory is longer than an AF_UNIX path may be.
+
+    The first run after the socket moved per-run died at once with "UNIX socket path ... is too
+    long". The guard is here so the next long --runs path is named before a boot is attempted.
+    """
+    src = (ROOT / "run-experiment.sh").read_text()
+    assert "KD_SOCK=\"/tmp/opencode/kd-$NONCE.sock\"" in src, \
+        "the socket must stay short, so it lives beside the run rather than inside it"
+    assert "-gt 100" in src and "AF_UNIX at 108" in src, "the limit has to be stated, not obeyed silently"
+
+
+def test_an_early_vanishing_is_not_recorded_as_a_measured_shutdown():
+    """"The process is gone" and "the guest closed itself" are different claims.
+
+    Labelling a ten-second disappearance as a shutdown hands the grader a clean outcome for a run
+    that never reached a session, and the grader's no-bugcheck claim then passes on nothing.
+    """
+    src = (ROOT / "run-experiment.sh").read_text()
+    assert "MIN_LIVE=120" in src
+    assert "OUTCOME=ended-early" in src
+    assert '"lived_seconds=$ELAPSED"' in src, "how long the guest lived belongs in the run record"
+    assert "$([ \"$OUTCOME\" = timeout-killed ] || [ \"$OUTCOME\" = ended-early ] && echo true" in src
+
+
+def test_ended_early_fails_the_no_bugcheck_claim(tmp_path):
+    r = _run("--run", fixture_run(tmp_path, outcome="ended-early", crash=True))
+    assert "FAIL        no-bugcheck" in r.stdout, r.stdout
+    assert "did not end on its own" in r.stdout, r.stdout

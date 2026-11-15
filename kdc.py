@@ -32,6 +32,11 @@ RIG  = os.path.dirname(os.path.abspath(__file__))
 # overridable because a fixed socket makes a stale collector race a fresh one for the guest, and a
 # log in the rig root blends the runs together.
 SOCK = os.environ.get("KD_SOCK", "/tmp/opencode/kd.sock")
+if len(SOCK) > 100:
+    # QEMU refuses the same path at parse time, so a long name has to be named here too rather than
+    # surfacing as an OSError from the first connect in the loop.
+    raise SystemExit("kdc.py: KD_SOCK is %d bytes and the kernel caps AF_UNIX paths at 108: %s"
+                     % (len(SOCK), SOCK))
 LOG  = os.environ.get("KDC_LOG", os.path.join(RIG, "kdc-live.log"))
 HOLD_RELEASE = os.path.join(RIG, "hold-release")
 

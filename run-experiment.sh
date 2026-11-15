@@ -129,8 +129,19 @@ RUN_JSON="$RUN/run.json"
 # socket the collector listens on, and the collector's own module log. A fixed KD socket is worse
 # than a lost log, because kdc.py loops forever on it: a collector left over from an earlier boot
 # races the fresh one to accept the guest, and the run cannot tell which stream it is reading.
-KD_SOCK="$RUN/kd.sock"
+# The socket stays short and lives beside the run rather than inside it: an AF_UNIX path is capped
+# at 108 bytes, and the run directory name is already 106 of them. A run of this loop died at once
+# with "UNIX socket path ... is too long" when the socket was placed where the rule said it should
+# go, which is the shape of a good rule applied past a limit nobody had written down.
+KD_SOCK="/tmp/opencode/kd-$NONCE.sock"
 SEABIOS_LOG="$RUN/seabios.log"
+
+if [ "${#KD_SOCK}" -gt 100 ]; then
+  printf 'the KD socket path is %s bytes and the kernel caps AF_UNIX at 108: %s\n' \
+    "${#KD_SOCK}" "$KD_SOCK" >&2
+  printf 'shorten --runs or the run name; QEMU will refuse to start otherwise\n' >&2
+  exit 2
+fi
 
 prepare() {
   mkdir -p "$RUN"
@@ -231,12 +242,25 @@ amend "started=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "outcome=booting"
 # than passing or failing it. What does bear on the display question is the module stream plus the
 # captures the guest writes, and both are collected.
 printf 'hold: %ss before the run is closed\n' "$HOLD"
+# MIN_LIVE is what stops "the process is gone" from being recorded as "the guest shut itself down".
+# A boot that dies in ten seconds, for any reason at all, has told the rig nothing, and labelling it
+# a measured shutdown hands the grader a clean outcome for a run that never reached a session.
+MIN_LIVE=120
+printf 'live: the guest must last %ss before its own exit counts as a shutdown\n' "$MIN_LIVE"
 ELAPSED=0
+ENDED_EARLY=""
 while [ "$ELAPSED" -lt "$HOLD" ]; do
   sleep 10
   ELAPSED=$((ELAPSED + 10))
   if ! "$RIG/guest-running.sh" check >/dev/null; then
-    printf 'the guest ended its own run at %ss\n' "$ELAPSED"
+    if [ "$ELAPSED" -lt "$MIN_LIVE" ]; then
+      ENDED_EARLY=1
+      printf 'the guest vanished at %ss, before %ss: that is not a shutdown\n' "$ELAPSED" "$MIN_LIVE"
+      printf 'the launcher said:\n'
+      tail -6 "$RUN/run-driver-detached.log" 2>/dev/null | sed 's/^/  /'
+    else
+      printf 'the guest ended its own run at %ss\n' "$ELAPSED"
+    fi
     break
   fi
   if [ "$((ELAPSED % 60))" -eq 0 ]; then
@@ -258,14 +282,17 @@ fi
 
 # Whether the guest ended its own run, and how to stop one that will not, belong to
 # guest-running.sh, so the rig holds one answer rather than a per-script copy.
-if "$RIG/guest-running.sh" wait "$TIMEOUT"; then
+if [ -n "$ENDED_EARLY" ]; then
+  OUTCOME=ended-early
+elif "$RIG/guest-running.sh" wait "$TIMEOUT"; then
   OUTCOME=measured-shutdown
 else
   printf 'timeout after %ss: a guest that bugchecked cannot end its own run\n' "$TIMEOUT"
   "$RIG/guest-running.sh" stop
   OUTCOME=timeout-killed
 fi
-amend "ended=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "outcome=$OUTCOME" "crash_suspected=$([ "$OUTCOME" = timeout-killed ] && echo true || echo false)"
+amend "ended=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "outcome=$OUTCOME" "lived_seconds=$ELAPSED" \
+  "crash_suspected=$([ "$OUTCOME" = timeout-killed ] || [ "$OUTCOME" = ended-early ] && echo true || echo false)"
 
 # The collector has nothing left to read once the guest is gone, and leaving it alive poisons the
 # next run for the reason this script refuses one at the start.
