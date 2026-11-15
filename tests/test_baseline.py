@@ -360,7 +360,8 @@ def test_the_runner_configures_the_overlay_and_leaves_no_shared_state_behind():
         "the trigger and the nonce are per-run inputs, not baked state"
     assert "refusing to boot a run that records nothing" in src
     assert 'LOGDIR="$RUN"' in src, "a KD log outside the run directory belongs to no run"
-    assert 'KD_SOCK="$RUN/kd.sock"' in src, "a shared KD socket is an accept race"
+    assert 'KD_SOCK="/tmp/opencode/kd-$NONCE.sock"' in src, \
+        "a shared KD socket is an accept race, and a per-run socket must stay under 108 bytes"
     assert 'SEABIOS_LOG="$RUN/seabios.log"' in src, "firmware output per run or not at all"
     assert "qemu-nbd -r -f qcow2" in src, "reading evidence out of a run must not be able to write it"
     assert "sudo cp -p" in src, "mtimes are how an inherited file is spotted"
