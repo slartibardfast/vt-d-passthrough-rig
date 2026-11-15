@@ -1,0 +1,21 @@
+registration this hive carries:
+  control set                              ControlSet001
+  devnode Enum Service                     ati2mtag
+  devnode class key                        0001
+  devnode VideoID                          9AEF0D0F-2356-4E54-9833-53DAB38FD7CC
+  class InfPath                            display.inf
+  class InfSection                         vga
+  class DriverDesc                         Standard VGA Graphics Adapter
+  class root InstalledDisplayDrivers       ['ati2dvag']
+  class root VgaCompatible                 0
+  class Settings InstalledDisplayDrivers   ['ati2dvag']
+  class Settings VgaCompatible             0
+  per-adapter InstalledDisplayDrivers      ['ati2dvag']
+  per-adapter VgaCompatible                0
+  per-adapter ChipType                     AMD ATOMBIOS
+  per-adapter Video Service                ati2mtag
+  Services\ati2mtag Start                  1
+  Services\ati2mtag ImagePath              \??\D:\drv\ati2mtag.sys
+verdict: BOUND-READY
+  disclosed: the class node's InfPath, InfSection and DriverDesc are read and shown but not rewritten. This tool changes the values the runtime reads, not the node's install provenance, so a node that still names display.inf would re-seed Settings from that INF on a later install pass.
+  the miniport and the per-adapter display selection both name the ATI driver

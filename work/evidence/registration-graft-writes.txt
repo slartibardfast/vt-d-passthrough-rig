@@ -1,0 +1,42 @@
+captured 2026-11-15, rig worktree, before the registration boot.
+the file below is the raw record; nothing here is a driver or display verdict.
+
+registration this hive carries:
+  control set                              ControlSet001
+  devnode Enum Service                     vga
+  devnode class key                        0001
+  devnode VideoID                          9AEF0D0F-2356-4E54-9833-53DAB38FD7CC
+  class InfPath                            display.inf
+  class InfSection                         vga
+  class DriverDesc                         Standard VGA Graphics Adapter
+  class root InstalledDisplayDrivers       None
+  class root VgaCompatible                 None
+  class Settings InstalledDisplayDrivers   ['vga', 'framebuf', 'vga256', 'vga64k']
+  class Settings VgaCompatible             1
+  per-adapter InstalledDisplayDrivers      ['vga', 'framebuf', 'vga256', 'vga64k']
+  per-adapter VgaCompatible                1
+  per-adapter ChipType                     AMD ATOMBIOS
+  per-adapter Video Service                vga
+  Services\ati2mtag Start                  None
+  Services\ati2mtag ImagePath              None
+values read from the INF (name, value, provenance):
+  InstalledDisplayDrivers = ['ati2dvag']  [MULTI_SZ]  inf:/home/dconnolly/xp64-corpus/extracted-inf/icafe-100.50-xp64-9.00.300.3005/Packages/Drivers/Display/XP6A_INF/CA178340.inf:2150
+  VgaCompatible = 0  [DWORD]  inf:/home/dconnolly/xp64-corpus/extracted-inf/icafe-100.50-xp64-9.00.300.3005/Packages/Drivers/Display/XP6A_INF/CA178340.inf:2154
+writes this graft makes:
+  ControlSet001\Services\ati2mtag\Type = 1  [DWORD]  a kernel driver
+  ControlSet001\Services\ati2mtag\Start = 1  [DWORD]  boot-start, the one value that puts the miniport in the load order
+  ControlSet001\Services\ati2mtag\ErrorControl = 0  [DWORD]  a failure must not halt the boot L am measuring
+  ControlSet001\Services\ati2mtag\Group = 'Video'  [SZ]  the load group the real install assigns
+  ControlSet001\Services\ati2mtag\ImagePath = '\\??\\D:\\drv\\ati2mtag.sys'  [SZ]  measured law: the INF route %12% is reverted by file protection, so the image is carried on the driver volume (see call/0009 for the letter pin)
+  ControlSet001\Enum\PCI\VEN_1002&DEV_67B0&SUBSYS_E285174B&REV_00\3&267a616a&0&20\Service = 'ati2mtag'  [SZ]  what PnP loads for this devnode
+  ControlSet001\Control\Class\{4D36E968-E325-11CE-BFC1-08002BE10318}\0001\Service = 'ati2mtag'  [SZ]  the class node's own view
+  ControlSet001\Control\Class\{4D36E968-E325-11CE-BFC1-08002BE10318}\0001\InstalledDisplayDrivers = ['ati2dvag']  [MULTI_SZ]  from the INF
+  ControlSet001\Control\Class\{4D36E968-E325-11CE-BFC1-08002BE10318}\0001\VgaCompatible = 0  [DWORD]  from the INF
+  ControlSet001\Control\Class\{4D36E968-E325-11CE-BFC1-08002BE10318}\0001\Settings\InstalledDisplayDrivers = ['ati2dvag']  [MULTI_SZ]  measured law: SetupAPI seeds the per-adapter key from Settings, so a re-bind must find the ATI set here and not the vga set that is in it now
+  ControlSet001\Control\Class\{4D36E968-E325-11CE-BFC1-08002BE10318}\0001\Settings\VgaCompatible = 0  [DWORD]  same channel as the line above
+  ControlSet001\Control\Video\{9AEF0D0F-2356-4E54-9833-53DAB38FD7CC}\0000\InstalledDisplayDrivers = ['ati2dvag']  [MULTI_SZ]  the key win32k reads to choose the display driver; nothing has ever written it
+  ControlSet001\Control\Video\{9AEF0D0F-2356-4E54-9833-53DAB38FD7CC}\0000\VgaCompatible = 0  [DWORD]  same key, and =1 is what makes the session a VGA session
+  ControlSet001\Control\Video\{9AEF0D0F-2356-4E54-9833-53DAB38FD7CC}\0000\Device Description = 'AMD Radeon R9 290X / 390X'  [SZ]  the description SetupAPI resolved for this package (see setupapi.log #I022) and the one handinstall.py wrote on the class node
+  ControlSet001\Control\Video\{9AEF0D0F-2356-4E54-9833-53DAB38FD7CC}\Video\Service = 'ati2mtag'  [SZ]  the service the video device object names
+  disclosed: the class node's InfPath, InfSection and DriverDesc are read and shown but not rewritten. This tool changes the values the runtime reads, not the node's install provenance, so a node that still names display.inf would re-seed Settings from that INF on a later install pass.
+read back from the written hive: verdict BOUND-READY

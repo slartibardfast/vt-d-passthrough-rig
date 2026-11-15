@@ -1,0 +1,6 @@
+driver volume identity: disk signature 0x28152ec4, partition at byte 1048576
+drive letters this hive pins now:
+  C: 022a032a007e000000000000
+  D: c42e15280000100000000000   <- the driver volume
+  E: 022a032a00001aff04000000
+already pinned: D: is the driver volume and no other letter claims it
