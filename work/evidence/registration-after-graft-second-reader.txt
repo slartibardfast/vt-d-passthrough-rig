@@ -1,0 +1,73 @@
+captured 2026-11-15 from the tracked hive work/evidence/system-hive-after-the-graft (sha256 9f09b487069848c6fc6e651968a4c6f1ff42dcc409ce3354f237640974ce96fe),
+the byte copy offline-registration.sh read back off the disk in run registration-graft-20261115T005956Z.
+reader: hivexget, a separate program from registration_graft.py. Both use the libhivex library,
+so this is a second program, not a second parser. Each block is the command run and what it printed.
+
+$ hivexget work/evidence/system-hive-after-the-graft 'ControlSet001\Services\ati2mtag'
+"Type"=dword:00000001
+"Start"=dword:00000001
+"ErrorControl"=dword:00000000
+"Group"="Video"
+"ImagePath"="\\??\\D:\\drv\\ati2mtag.sys"
+
+$ hivexget work/evidence/system-hive-after-the-graft 'ControlSet001\Enum\PCI\VEN_1002&DEV_67B0&SUBSYS_E285174B&REV_00\3&267a616a&0&20'
+"DeviceDesc"="Standard VGA Graphics Adapter"
+"LocationInformation"="PCI bus 0, device 4, function 0"
+"Capabilities"=dword:00000006
+"UINumber"=dword:00000004
+"HardwareID"=hex(7):50,00,43,00,49,00,5c,00,56,00,45,00,4e,00,5f,00,31,00,30,00,30,00,32,00,26,00,44,00,45,00,56,00,5f,00,36,00,37,00,42,00,30,00,26,00,53,00,55,00,42,00,53,00,59,00,53,00,5f,00,45,00,32,00,38,00,35,00,31,00,37,00,34,00,42,00,26,00,52,00,45,00,56,00,5f,00,30,00,30,00,00,00,50,00,43,00,49,00,5c,00,56,00,45,00,4e,00,5f,00,31,00,30,00,30,00,32,00,26,00,44,00,45,00,56,00,5f,00,36,00,37,00,42,00,30,00,26,00,53,00,55,00,42,00,53,00,59,00,53,00,5f,00,45,00,32,00,38,00,35,00,31,00,37,00,34,00,42,00,00,00,50,00,43,00,49,00,5c,00,56,00,45,00,4e,00,5f,00,31,00,30,00,30,00,32,00,26,00,44,00,45,00,56,00,5f,00,36,00,37,00,42,00,30,00,26,00,43,00,43,00,5f,00,30,00,33,00,30,00,30,00,30,00,30,00,00,00,50,00,43,00,49,00,5c,00,56,00,45,00,4e,00,5f,00,31,00,30,00,30,00,32,00,26,00,44,00,45,00,56,00,5f,00,36,00,37,00,42,00,30,00,26,00,43,00,43,00,5f,00,30,00,33,00,30,00,30,00,00,00,00,00
+"CompatibleIDs"=hex(7):50,00,43,00,49,00,5c,00,56,00,45,00,4e,00,5f,00,31,00,30,00,30,00,32,00,26,00,44,00,45,00,56,00,5f,00,36,00,37,00,42,00,30,00,26,00,52,00,45,00,56,00,5f,00,30,00,30,00,00,00,50,00,43,00,49,00,5c,00,56,00,45,00,4e,00,5f,00,31,00,30,00,30,00,32,00,26,00,44,00,45,00,56,00,5f,00,36,00,37,00,42,00,30,00,00,00,50,00,43,00,49,00,5c,00,56,00,45,00,4e,00,5f,00,31,00,30,00,30,00,32,00,26,00,43,00,43,00,5f,00,30,00,33,00,30,00,30,00,30,00,30,00,00,00,50,00,43,00,49,00,5c,00,56,00,45,00,4e,00,5f,00,31,00,30,00,30,00,32,00,26,00,43,00,43,00,5f,00,30,00,33,00,30,00,30,00,00,00,50,00,43,00,49,00,5c,00,56,00,45,00,4e,00,5f,00,31,00,30,00,30,00,32,00,00,00,50,00,43,00,49,00,5c,00,43,00,43,00,5f,00,30,00,33,00,30,00,30,00,30,00,30,00,00,00,50,00,43,00,49,00,5c,00,43,00,43,00,5f,00,30,00,33,00,30,00,30,00,00,00,00,00
+"ClassGUID"="{4D36E968-E325-11CE-BFC1-08002BE10318}"
+"Class"="Display"
+"Driver"="{4D36E968-E325-11CE-BFC1-08002BE10318}\\0001"
+"Mfg"="(Standard display types)"
+"Service"="ati2mtag"
+"ConfigFlags"=dword:00000000
+"ParentIdPrefix"="4&2fc0c779&0"
+
+$ hivexget work/evidence/system-hive-after-the-graft 'ControlSet001\Control\Class\{4D36E968-E325-11CE-BFC1-08002BE10318}\0001'
+"InfPath"="display.inf"
+"InfSection"="vga"
+"ProviderName"="Microsoft"
+"DriverDateData"=hex(3):00,40,2a,7c,dd,68,c2,01
+"DriverDate"="10-1-2002"
+"DriverVersion"="5.2.3790.1830"
+"MatchingDeviceId"="pci\\cc_0300"
+"DriverDesc"="Standard VGA Graphics Adapter"
+"Service"="ati2mtag"
+"InstalledDisplayDrivers"=hex(7):61,00,74,00,69,00,32,00,64,00,76,00,61,00,67,00,00,00
+"VgaCompatible"=dword:00000000
+
+$ hivexget work/evidence/system-hive-after-the-graft 'ControlSet001\Control\Class\{4D36E968-E325-11CE-BFC1-08002BE10318}\0001\Settings'
+"InstalledDisplayDrivers"=hex(7):61,00,74,00,69,00,32,00,64,00,76,00,61,00,67,00,00,00
+"VgaCompatible"=dword:00000000
+"Device Description"="Standard VGA Graphics Adapter"
+
+$ hivexget work/evidence/system-hive-after-the-graft 'ControlSet001\Control\Video\{9AEF0D0F-2356-4E54-9833-53DAB38FD7CC}\0000'
+"InstalledDisplayDrivers"=hex(7):61,00,74,00,69,00,32,00,64,00,76,00,61,00,67,00,00,00
+"VgaCompatible"=dword:00000000
+"Device Description"="AMD Radeon R9 290X / 390X"
+"HardwareInformation.ChipType"=hex(3):41,00,4d,00,44,00,20,00,41,00,54,00,4f,00,4d,00,42,00,49,00,4f,00,53,00,00,00
+"HardwareInformation.AdapterString"=hex(3):56,00,47,00,41,00,00,00
+"HardwareInformation.DacType"=hex(3):38,00,20,00,62,00,69,00,74,00,00,00
+"HardwareInformation.BiosString"=hex(3):30,00,31,00,2e,00,30,00,30,00,00,00
+"HardwareInformation.MemorySize"=hex(3):00,00,00,01
+
+$ hivexget work/evidence/system-hive-after-the-graft 'ControlSet001\Control\Video\{9AEF0D0F-2356-4E54-9833-53DAB38FD7CC}\Video'
+"Service"="ati2mtag"
+
+$ hivexget work/evidence/system-hive-after-the-graft 'ControlSet001\Control\Windows'
+"CSDVersion"=dword:00000100
+"CSDReleaseType"=dword:00000000
+"Directory"=str(2):"%SystemRoot%"
+"ErrorMode"=dword:00000000
+"NoInteractiveServices"=dword:00000000
+"SystemDirectory"=str(2):"%SystemRoot%\\system32"
+"ShellErrorMode"=dword:00000001
+"ShutdownTime"=hex(3):42,cd,6a,96,df,74,dd,01
+"HardErrorMode"=dword:00000002
+
+reading aid: hex(7) is REG_MULTI_SZ in UTF-16LE. 61,00,74,00,69,00,32,00,64,00,76,00,61,00,67,00
+decodes to "ati2dvag", so InstalledDisplayDrivers names the ATI display driver in the class
+root, its Settings subkey, and the per-adapter key. The last block shows the disk still holds
+ErrorMode=0: the documented No Disk setting was never written to this disk.
