@@ -622,3 +622,21 @@ def test_ended_early_fails_the_no_bugcheck_claim(tmp_path):
     r = _run("--run", fixture_run(tmp_path, outcome="ended-early", crash=True))
     assert "FAIL        no-bugcheck" in r.stdout, r.stdout
     assert "did not end on its own" in r.stdout, r.stdout
+
+
+def test_the_capture_claim_states_the_guest_clock_offset(tmp_path):
+    """Collected mtimes are guest-written and run eight hours ahead on this guest.
+
+    `runid.txt` is written by the host into the overlay and `capture.txt` by the guest, both inside
+    the same evidence set, so their mtime difference is the offset. Stating it on the witness line is
+    cheaper than letting a reader order two events by a timestamp that belongs to another clock.
+    """
+    run = fixture_run(tmp_path)
+    host_written = run / "evidence" / "WINDOWS" / "runid.txt"
+    host_written.write_text(NONCE + "\r\n", encoding="latin-1")
+    os.utime(host_written, (1_700_000_000, 1_700_000_000))
+    guest_written = run / "evidence" / "WINDOWS" / "capture.txt"
+    later = 1_700_000_000 + 8 * 3600
+    os.utime(guest_written, (later, later))
+    r = _run("--run", run)
+    assert "guest mtimes read +8.0 h" in r.stdout, r.stdout

@@ -133,7 +133,27 @@ def grade_capture_witness(run, manifest, claim):
                           "this run: re-stage the overlay with the current hook and nonce")
     rc = re.findall(r"(?m)^(\S+ rc=(\d+))", "\n".join(lines))
     counts = ", ".join("%s=%s" % (name.split()[0], code) for name, code in rc)
-    return claim.ok("nonce %s, sentinels present, %s" % (nonce, counts or "no rc lines"))
+    return claim.ok("nonce %s, sentinels present, %s%s"
+                    % (nonce, counts or "no rc lines", clock_skew_note(run)))
+
+
+def clock_skew_note(run):
+    """How far the guest's clock sits from the host's, measured rather than assumed.
+
+    The guest boots with `-rtc base=localtime` and believes it is UTC-8, so every NTFS mtime the
+    guest writes reads eight hours ahead of true UTC. `runid.txt` is the one artifact in the same
+    evidence set whose mtime the host wrote, so the pair gives the offset without asking anyone to
+    remember a flag. Reading a guest mtime as a UTC time is how a run looks like it happened in the
+    future, and eight hours is inside the window where that reads as a plausible ordering.
+    """
+    host = evidence(run, "WINDOWS/runid.txt")
+    guest = evidence(run, "WINDOWS/capture.txt")
+    if not (host.is_file() and guest.is_file()):
+        return ""
+    delta = (guest.stat().st_mtime - host.stat().st_mtime) / 3600.0
+    if abs(delta) < 0.05:
+        return ", guest clock agrees with the host"
+    return ", guest mtimes read %+.1f h from the host's (the guest runs localtime)" % delta
 
 
 def grade_powerplay(kd, claim, expect):
