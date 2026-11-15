@@ -26,12 +26,22 @@
 # process group.
 #
 # Usage: run-experiment.sh --golden <qcow2> --channel <img> --name NAME
-#                          [--runs DIR] [--timeout SECONDS] [--prepare-only] [--dry-run]
+#                          [--runs DIR] [--timeout SECONDS] [--hold SECONDS] [--no-bootlog]
+#                          [--prepare-only] [--dry-run]
 #        run-experiment.sh --list-evidence <mounted-system-volume>
+#
+# --hold is how a run ends. Nothing inside the guest closes it: the driver-install batch on
+# the channel REBOOTS, so a runner that waited for a self-shutdown would wait until its
+# timeout and record a crash that never happened. The host therefore holds the session open
+# long enough to reach a desktop and capture a frame, asks the machine to close through the
+# monitor (system_powerdown, an ACPI request, not a reset), and then waits for QEMU to exit
+# on its own so the writeback cache and the hive logs land clean. --no-bootlog skips the
+# loader flag; it exists for a synthetic image with no system volume, not for a real run.
 set -uo pipefail
 
 RIG=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 GOLDEN="" CHANNEL="" NAME="" RUNS="$RIG/work/runs" TIMEOUT=600 PREPARE="" DRY="" TREE=""
+HOLD=240 NO_BOOTLOG=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -40,6 +50,8 @@ while [ $# -gt 0 ]; do
     --name) NAME=${2:-}; shift 2;;
     --runs) RUNS=${2:-}; shift 2;;
     --timeout) TIMEOUT=${2:-}; shift 2;;
+    --hold) HOLD=${2:-}; shift 2;;
+    --no-bootlog) NO_BOOTLOG=1; shift;;
     --prepare-only) PREPARE=1; shift;;
     --dry-run) DRY=1; shift;;
     --list-evidence) TREE=${2:-}; shift 2;;
@@ -50,14 +62,15 @@ done
 # The files a run owes, in one place. The volatile video device map is here because
 # HARDWARE is built at boot and exists on no disk: an offline read of an overlay cannot
 # supply it, so the guest writes it during the run and the host only ever collects it.
-EVIDENCE=( "WINDOWS/devicemap.txt" "letters-hook.txt" )
+EVIDENCE=( "WINDOWS/devicemap.txt" "WINDOWS/devnode.txt" "letters-hook.txt" "WINDOWS/ntbtlog.txt"
+           "WINDOWS/system32/config/system" )
 
 if [ -n "$TREE" ]; then
   for rel in "${EVIDENCE[@]}"; do
     if [ -f "$TREE/$rel" ]; then
-      printf 'evidence: %s present\n' "$rel"
+      printf '%s\tpresent\n' "$rel"
     else
-      printf 'evidence: %s absent (the guest writes it during the run)\n' "$rel"
+      printf '%s\tabsent (the guest writes it during the run)\n' "$rel"
     fi
   done
   exit 0
@@ -68,8 +81,7 @@ fi
 # failed as a traceback about a golden that was never built.
 for need in qemu-img python3 realpath date; do
   command -v "$need" >/dev/null || {
-    printf '%s is required; on Ubuntu and Debian %s comes from the package %s
-' "$need" "$need" \
+    printf '%s is required; on Ubuntu and Debian %s comes from the package %s\n' "$need" \
       "$([ "$need" = qemu-img ] && echo qemu-utils || echo coreutils)" >&2
     exit 2; }
 done
@@ -146,9 +158,11 @@ printf 'plan: boot the overlay, never the golden\n'
 printf 'plan: overlay %s backs onto %s\n' "$OVERLAY" "$GOLDEN"
 printf 'plan: channel copy %s\n' "$RUN_CHANNEL"
 PRINT_ONLY=1 WORK="$OVERLAY" CHANNEL="$RUN_CHANNEL" FORMAT=qcow2 CACHE=writeback GLINET=none \
-  LOG="$RUN/driver-stage.log" "$RIG/run-driver.sh" || { printf 'the launcher refused the plan\n' >&2; exit 2; }
+  LOGDIR="$RUN" LOG="$RUN/driver-stage.log" "$RIG/run-driver.sh" || { printf 'the launcher refused the plan\n' >&2; exit 2; }
 
 if [ -n "$DRY" ]; then
+  printf 'plan: the overlay is given /bootlog before it boots, unless --no-bootlog\n'
+  printf 'plan: the run is held %ss, then closed through the monitor, so the hives flush\n' "$HOLD"
   printf 'dry run: prepared and planned, and no QEMU was started\n'
   exit 0
 fi
@@ -157,16 +171,50 @@ if [ -n "$PREPARE" ]; then
   exit 0
 fi
 
+if [ -z "$NO_BOOTLOG" ]; then
+  # The flag has to be on the entry of the image that boots, so it goes on the overlay and
+  # never on the golden: the golden's manifest records the bytes the OS disk had, and a baked
+  # setting would make that hash describe something other than what it says.
+  printf 'setting: /bootlog on the overlay NTLDR will read\n'
+  "$RIG/golden-settings.py" --image "$OVERLAY" --bootlog --record "$RUN" || {
+    printf 'the overlay could not be given /bootlog; refusing to boot a run that records nothing\n' >&2
+    exit 2; }
+fi
+
 WORK="$OVERLAY" CHANNEL="$RUN_CHANNEL" FORMAT=qcow2 CACHE=writeback GLINET=none \
-  LOG="$RUN/driver-stage.log" "$RIG/start-boot-detached.sh" || {
+  LOGDIR="$RUN" LOG="$RUN/driver-stage.log" "$RIG/start-boot-detached.sh" || {
     printf 'the launcher refused to start; the overlay and the channel copy stay for inspection\n' >&2
     exit 2; }
 
 amend "started=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "outcome=booting"
+
+# The measurement window. Frames are dumped from the emulated console surface, which witnesses
+# how far the boot came and nothing about the 290X's own output; load-verify.py says so when it
+# reports them. The monitor is opened per command and let go, never held across the wait.
+printf 'hold: %ss before the run is closed\n' "$HOLD"
+ELAPSED=0
+while [ "$ELAPSED" -lt "$HOLD" ]; do
+  sleep 10
+  ELAPSED=$((ELAPSED + 10))
+  if ! "$RIG/guest-running.sh" check >/dev/null; then
+    printf 'the guest ended its own run at %ss\n' "$ELAPSED"
+    break
+  fi
+  if [ "$((ELAPSED % 60))" -eq 0 ]; then
+    /usr/bin/python3 "$RIG/monq.py" "screendump $RUN/feed-$ELAPSED.ppm" >/dev/null 2>&1 \
+      && printf 'feed: %s/feed-%ss.ppm\n' "$RUN" "$ELAPSED"
+  fi
+done
+if "$RIG/guest-running.sh" check >/dev/null; then
+  printf 'close: asking the machine to shut down through the monitor\n'
+  /usr/bin/python3 "$RIG/monq.py" system_powerdown >/dev/null 2>&1 || \
+    printf 'the monitor refused the request; the timeout will end the run instead\n' >&2
+fi
+
 # Whether the guest ended its own run, and how to stop one that will not, belong to
 # guest-running.sh, so the rig holds one answer rather than a per-script copy.
 if "$RIG/guest-running.sh" wait "$TIMEOUT"; then
-  OUTCOME=clean-shutdown
+  OUTCOME=measured-shutdown
 else
   printf 'timeout after %ss: a guest that bugchecked cannot end its own run\n' "$TIMEOUT"
   "$RIG/guest-running.sh" stop
@@ -188,7 +236,9 @@ collect() {
   fi
   TREE="$M" "$0" --list-evidence "$M" | tee "$RUN/evidence-list.txt"
   mkdir -p "$RUN/evidence"
-  while read -r _ _ rel _; do
+  while read -r rel state _; do
+    printf 'evidence: %s %s\n' "$rel" "$state"
+    [ "$state" = present ] || continue
     [ -f "$M/$rel" ] || continue
     mkdir -p "$RUN/evidence/$(dirname "$rel")"
     sudo cp "$M/$rel" "$RUN/evidence/$rel"
