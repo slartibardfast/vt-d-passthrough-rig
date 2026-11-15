@@ -13,6 +13,12 @@ jobs:
           # os error 21); check/analyse tolerate directories, plan does not.
           cargo install allium-cli --version 3.6.1 --locked
           pip install hypothesis pytest
+          # qemu-img is not on the runner image. golden-build.sh converts the
+          # working disk and run-experiment.sh creates the overlay on top of it, so
+          # the loop's own tests need it here or the lane would skip the very thing
+          # it is meant to be checking.
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-utils
       - name: check
         run: allium check specs
       - name: analyse
