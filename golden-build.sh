@@ -49,10 +49,27 @@ if [ -e "$GOLDEN" ] && [ -z "$FORCE" ]; then
   exit 2
 fi
 
-SRC_FMT=$(qemu-img info --output=json "$FROM" | python3 -c 'import json,sys; print(json.load(sys.stdin)["format"])')
+# The tools this script drives, checked before anything is written. A missing one must stop
+# the run with the package that provides it, because a golden that was never built is worth
+# more than a golden that was quietly not built: the first failure of this script on the CI
+# runner was `qemu-img: command not found` followed by a JSON traceback and a half-written
+# manifest, which reads like a broken conversion rather than a missing dependency.
+for need in qemu-img python3; do
+  command -v "$need" >/dev/null || {
+    printf '%s is required; on Ubuntu and Debian it comes from the package %s\n' "$need" \
+      "$([ "$need" = qemu-img ] && echo qemu-utils || echo python3)" >&2
+    exit 2; }
+done
+
+SRC_FMT=$(qemu-img info --output=json "$FROM" | python3 -c 'import json,sys; print(json.load(sys.stdin)["format"])') \
+  || { printf 'qemu-img cannot read %s; refusing to record a golden L cannot identify\n' "$FROM" >&2; exit 2; }
 printf 'source %s is format %s\n' "$FROM" "$SRC_FMT"
 tmp="$GOLDEN.partial"
-qemu-img convert -f "$SRC_FMT" -O qcow2 "$FROM" "$tmp"
+if ! qemu-img convert -f "$SRC_FMT" -O qcow2 "$FROM" "$tmp"; then
+  rm -f "$tmp"
+  printf 'qemu-img convert failed; no golden was recorded\n' >&2
+  exit 2
+fi
 mv "$tmp" "$GOLDEN"
 
 # The identity is the same pair hive-pin.py pins a drive letter with: the MBR disk signature

@@ -63,6 +63,17 @@ if [ -n "$TREE" ]; then
   exit 0
 fi
 
+# A missing tool is named here, before anything else runs. The first time this script met a
+# runner without qemu-utils it went on to `qemu-img info`, took an empty string as JSON, and
+# failed as a traceback about a golden that was never built.
+for need in qemu-img python3 realpath date; do
+  command -v "$need" >/dev/null || {
+    printf '%s is required; on Ubuntu and Debian %s comes from the package %s
+' "$need" "$need" \
+      "$([ "$need" = qemu-img ] && echo qemu-utils || echo coreutils)" >&2
+    exit 2; }
+done
+
 [ -n "$GOLDEN" ] && [ -n "$CHANNEL" ] && [ -n "$NAME" ] || {
   printf 'usage: run-experiment.sh --golden <qcow2> --channel <img> --name NAME [--timeout S] [--prepare-only] [--dry-run]\n' >&2
   exit 2; }

@@ -250,3 +250,34 @@ def test_a_guest_named_process_refuses_the_golden_build_and_a_mention_does_not(t
     finally:
         mention.terminate()
         mention.wait()
+
+
+def _without_tools(script, *args, tmp_path):
+    """Run a rig script with an empty PATH, so a missing dependency has to surface as itself."""
+    empty = tmp_path / "empty-path"
+    empty.mkdir()
+    return subprocess.run(["/bin/bash", str(ROOT / script), *[str(a) for a in args]],
+                          capture_output=True, text=True, cwd=str(tmp_path),
+                          env={"PATH": str(empty)})
+
+
+def test_a_missing_qemu_img_is_named_as_a_package(tmp_path):
+    raw = tmp_path / "os.raw"
+    synthetic_raw(raw)
+    r = _without_tools("golden-build.sh", "--from", raw, "--to", tmp_path / "g", "--name", "os",
+                       tmp_path=tmp_path)
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "qemu-img" in r.stderr and "qemu-utils" in r.stderr, r.stderr
+    assert not (tmp_path / "g" / "os.json").exists(), "a failed conversion must record no golden"
+
+
+def test_a_missing_qemu_img_stops_a_run_before_it_creates_anything(tmp_path):
+    golden = tmp_path / "os.qcow2"
+    golden.write_bytes(b"not really a qcow2, and the tool must not get this far")
+    channel = tmp_path / "gpudrv.img"
+    channel.write_bytes(b"channel")
+    r = _without_tools("run-experiment.sh", "--golden", golden, "--channel", channel,
+                       "--name", "x", "--prepare-only", tmp_path=tmp_path)
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "qemu-img" in r.stderr and "qemu-utils" in r.stderr, r.stderr
+    assert not (tmp_path / "work").exists()
