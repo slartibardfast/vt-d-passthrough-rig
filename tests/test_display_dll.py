@@ -69,23 +69,36 @@ def test_the_target_directory_is_found_by_name_and_not_assumed():
     assert "DLLCACHE" in src, "Windows File Protection restores from dllcache, so it gets the same bytes"
 
 
-def test_a_bad_dll_name_is_refused_before_anything_is_mounted():
-    r = subprocess.run([sys.executable, str(SETTINGS), "--image", str(ROOT / "gpudrv.img"),
-                        "--display-dll", str(ROOT / "gpudrv.img")],
+def test_a_bad_dll_name_is_refused_before_anything_is_mounted(tmp_path):
+    """Both files exist here on purpose.
+
+    A refusal test that leans on an absent path proves only that the tool notices absent paths, and it
+    passes or fails depending on whether this machine holds a proprietary image. Naming the refusal
+    means arranging for that refusal to be the one reached.
+    """
+    image = tmp_path / "volume.qcow2"
+    image.write_bytes(b"qcow2-shaped bytes: the name check must fire before any mount")
+    not_a_dll = tmp_path / "notes.txt"
+    not_a_dll.write_bytes(b"not a PE image")
+    r = subprocess.run([sys.executable, str(SETTINGS), "--image", str(image),
+                        "--display-dll", str(not_a_dll)],
                        capture_output=True, text=True, cwd=str(ROOT))
     assert r.returncode == 2, r.stdout + r.stderr
-    assert "named like a driver DLL" in (r.stdout + r.stderr), r.stderr
-    r = subprocess.run([sys.executable, str(SETTINGS), "--image", str(ROOT / "nonexistent.qcow2"),
-                        "--display-dll", str(ROOT / "nonexistent.dll")],
+    assert "named like a driver DLL" in (r.stdout + r.stderr), r.stdout + r.stderr
+    r = subprocess.run([sys.executable, str(SETTINGS), "--image", str(tmp_path / "absent.qcow2"),
+                        "--display-dll", str(not_a_dll)],
                        capture_output=True, text=True, cwd=str(ROOT))
-    assert r.returncode == 2 and "no such image" in (r.stdout + r.stderr), r.stderr
+    assert r.returncode == 2 and "no such image" in (r.stdout + r.stderr), r.stdout + r.stderr
 
 
-def test_the_extractor_names_its_arguments_and_refuses_a_path_as_a_name():
+def test_the_extractor_names_its_arguments_and_refuses_a_path_as_a_name(tmp_path):
     r = subprocess.run([str(CHANNEL_FILE)], capture_output=True, text=True, cwd=str(ROOT))
     assert r.returncode == 2 and "name the image, the file" in r.stderr, r.stderr
-    r = subprocess.run([str(CHANNEL_FILE), "--image", str(BASE_CHANNEL), "--name", "drv/ati2dvag.dll",
-                        "--out", "/tmp/opencode/never"], capture_output=True, text=True, cwd=str(ROOT))
+    image = tmp_path / "channel.img"
+    image.write_bytes(b"an image that exists, so the name check is the one that fires")
+    r = subprocess.run([str(CHANNEL_FILE), "--image", str(image), "--name", "drv/ati2dvag.dll",
+                        "--out", str(tmp_path / "never")], capture_output=True, text=True,
+                       cwd=str(ROOT))
     assert r.returncode == 2 and "name a file, not a path" in r.stderr, r.stderr
     r = subprocess.run([str(CHANNEL_FILE), "--image", str(ROOT / "absent.img"), "--name", "ati2dvag.dll",
                         "--out", "/tmp/opencode/never"], capture_output=True, text=True, cwd=str(ROOT))

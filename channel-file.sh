@@ -28,8 +28,10 @@ done
 [ -n "$IMG" ] && [ -n "$NAME" ] && [ -n "$OUT" ] || {
   printf 'name the image, the file, and where to put it\nusage: %s\n' \
     'channel-file.sh --image <img> --name <file> --out <path>' >&2; exit 2; }
-test -f "$IMG" || { printf 'no such channel image: %s\n' "$IMG" >&2; exit 2; }
+# The cheap shape checks come first, so a malformed name is refused whatever the filesystem holds. A
+# reader who typos a path into --name gets the same answer on a runner as on a rig with images.
 case "$NAME" in */*|*..*) printf 'name a file, not a path: %s\n' "$NAME" >&2; exit 2;; esac
+test -f "$IMG" || { printf 'no such channel image: %s\n' "$IMG" >&2; exit 2; }
 
 if "$RIG/guest-running.sh" check >/dev/null; then
   printf 'a QEMU is running and may hold these images; refusing to read a volume under it\n' >&2
