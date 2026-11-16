@@ -49,7 +49,7 @@ set -uo pipefail
 
 RIG=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 GOLDEN="" CHANNEL="" NAME="" RUNS="$RIG/work/runs" TIMEOUT=600 PREPARE="" DRY="" TREE=""
-HOLD=240 NO_BOOTLOG="" DEST="" FORCE="" DISPLAY_DLL=""
+HOLD=240 NO_BOOTLOG="" DEST="" FORCE="" DISPLAY_DLL="" CLASS_BINDING=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -62,6 +62,7 @@ while [ $# -gt 0 ]; do
     --dest) DEST=${2:-}; shift 2;;
     --force) FORCE=1; shift;;
     --display-dll) DISPLAY_DLL=${2:-}; shift 2;;
+    --class-binding) CLASS_BINDING=${2:-}; shift 2;;
     --no-bootlog) NO_BOOTLOG=1; shift;;
     --prepare-only) PREPARE=1; shift;;
     --dry-run) DRY=1; shift;;
@@ -139,6 +140,12 @@ NONCE="$NAME-$STAMP"
 if [ -n "$DISPLAY_DLL" ]; then
   case "$DISPLAY_DLL" in /*) ;; *) DISPLAY_DLL="$RIG/$DISPLAY_DLL";; esac
   test -f "$DISPLAY_DLL" || { printf 'no display DLL to install at %s\n' "$DISPLAY_DLL" >&2; exit 2; }
+fi
+
+if [ -n "$CLASS_BINDING" ]; then
+  case "$CLASS_BINDING" in /*) ;; *) CLASS_BINDING="$RIG/$CLASS_BINDING";; esac
+  test -f "$CLASS_BINDING" || { printf 'no INF to bind the class node from at %s\n' "$CLASS_BINDING" >&2
+                               exit 2; }
 fi
 
 if [ -n "$DEST" ]; then
@@ -278,6 +285,8 @@ if [ -n "$DRY" ]; then
   printf 'plan: the overlay is given /bootlog, the Startup trigger, and the nonce, unless --no-bootlog\n'
   [ -z "$DISPLAY_DLL" ] || printf 'plan: the overlay is given %s in system32\n' \
     "$(basename "$DISPLAY_DLL")"
+  [ -z "$CLASS_BINDING" ] || printf 'plan: the class node on the overlay volume is bound from %s\n' \
+    "$(basename "$CLASS_BINDING")"
   printf 'plan: the run is held %ss, then closed through the monitor, so the hives flush\n' "$HOLD"
   printf 'plan: evidence is read back from a read-only nbd attachment with its timestamps\n'
   printf 'dry run: prepared and planned, and no QEMU was started\n'
@@ -288,7 +297,7 @@ if [ -n "$PREPARE" ]; then
   exit 0
 fi
 
-if [ -z "$NO_BOOTLOG" ] || [ -n "$DISPLAY_DLL" ]; then
+if [ -z "$NO_BOOTLOG" ] || [ -n "$DISPLAY_DLL" ] || [ -n "$CLASS_BINDING" ]; then
   # Three settings, one image, one proof pass. The loader flag makes ntbtlog.txt exist; the trigger
   # is what the guest runs at logon to answer the questions no offline read can ask; and the nonce
   # is what lets the grader tell a file this run wrote from a file the golden handed over. Those
@@ -299,6 +308,7 @@ if [ -z "$NO_BOOTLOG" ] || [ -n "$DISPLAY_DLL" ]; then
     SETTINGS+=(--bootlog --startup-hook "$RIG/install-channel/startup-hook.bat" --runid "$NONCE")
   fi
   [ -z "$DISPLAY_DLL" ] || SETTINGS+=(--display-dll "$DISPLAY_DLL")
+  [ -z "$CLASS_BINDING" ] || SETTINGS+=(--class-binding "$CLASS_BINDING")
   printf 'setting: the overlay is configured by golden-settings.py, which proves each setting from a second mount\n'
   "$RIG/golden-settings.py" "${SETTINGS[@]}" || {
       printf 'the overlay could not be configured; refusing to boot a run that records nothing\n' >&2
@@ -309,6 +319,10 @@ if [ -z "$NO_BOOTLOG" ] || [ -n "$DISPLAY_DLL" ]; then
   if [ -n "$DISPLAY_DLL" ]; then
     amend "display_dll=$(basename "$DISPLAY_DLL")" \
       "display_dll_sha256=$(sha256sum "$DISPLAY_DLL" | cut -d' ' -f1)"
+  fi
+  if [ -n "$CLASS_BINDING" ]; then
+    amend "class_binding_inf=$(basename "$CLASS_BINDING")" \
+      "class_binding_sha256=$(sha256sum "$CLASS_BINDING" | cut -d' ' -f1)"
   fi
 fi
 

@@ -40,7 +40,9 @@ Usage
 Exit codes: 0 as expected, 1 not ready or write refused, 2 bad input.
 """
 import argparse
+import json
 import os
+from pathlib import Path
 import re
 import sys
 
@@ -356,10 +358,221 @@ def show_facts(f):
 def disclosures():
     """What this graft leaves alone, printed so no reader has to assume it."""
     return [
-        "the class node's InfPath, InfSection and DriverDesc are read and shown but not rewritten. "
-        "This tool changes the values the runtime reads, not the node's install provenance, so a "
-        "node that still names display.inf would re-seed Settings from that INF on a later install pass.",
+        "the `graft` subcommand changes the values the runtime reads and leaves the class node's "
+        "install provenance alone, so a node that still names display.inf re-seeds Settings from that "
+        "INF on a later install pass. `classnode` is the subcommand that rewrites provenance, and it "
+        "reads every value from the INF rather than typing them.",
     ]
+
+
+def inf_binding(inf_path, device_id=DEVICE_ID):
+    """The class-node values this device's own INF states, read out and never typed in.
+
+    Why a reader should trust the result: every field is tied to a line the function quotes back in
+    `provenance`, and a missing piece raises. A guessed `InfSection` would produce a device that boots
+    into a driver Windows cannot name, which is worse than no graft at all because the failure looks like
+    hardware.
+    """
+    lines = open(inf_path, encoding="utf-8", errors="replace").read().splitlines()
+    sections, current = {}, None
+    for n, raw in enumerate(lines, 1):
+        s = raw.strip()
+        if not s or s.startswith(";"):
+            continue
+        m = re.match(r"^\[(.+)\]\s*$", s)
+        if m:
+            current = m.group(1)
+            sections.setdefault(current, [])
+            continue
+        if current is not None:
+            sections[current].append((n, raw))
+
+    strings = {}
+    for n, line in sections.get("Strings", []) + sections.get("strings", []):
+        if "=" in line:
+            key, value = line.split("=", 1)
+            strings[key.strip()] = value.strip().strip('"')
+
+    def subst(text):
+        return re.sub(r"%([^%]+)%", lambda mm: strings.get(mm.group(1), mm.group(0)), text)
+
+    version = {k.lower(): v for k, _, v in
+               ((lambda kv: (kv[0], None, kv[1]))(line.split("=", 1))
+                for _, line in sections.get("Version", []) if "=" in line)}
+    want_guid = "{4D36E968-E325-11CE-BFC1-08002BE10318}".upper()
+    if version.get("classguid", "").upper() != want_guid:
+        raise Bad(f"{inf_path} declares ClassGUID={version.get('classguid')}, not the Display class "
+                  f"{want_guid}, so its values belong on no Display class node")
+
+    model, model_line = None, None
+    for name, entries in sections.items():
+        for n, line in entries:
+            if line.lstrip().startswith(";") or "=" not in line:
+                continue
+            left, _, right = line.partition("=")
+            parts = [f.strip() for f in right.split(",")]
+            ids = [f for f in parts[1:] if f.upper().startswith("PCI\\")]
+            if not ids or not any(device_id.upper() in i.upper() for i in ids):
+                continue
+            model = [left.strip(), parts[0]]
+            model_line = (name, n, line.strip())
+            break
+        if model:
+            break
+    if not model:
+        raise Bad(f"{inf_path} carries no model entry for {device_id}, so nothing here is derivable")
+
+    section = model[1].split(";")[0].strip()
+    if section not in sections:
+        raise Bad(f"{inf_path}'s model entry names [{section}], which the file does not contain")
+    driver_desc = subst(model[0].strip().strip('"'))
+    provider = subst(version.get("provider", ""))
+    driver_ver = version.get("driverver", "")
+    date, _, ver = driver_ver.partition(",")
+    if not provider or not driver_desc or not date.strip():
+        raise Bad(f"{inf_path} is missing Provider, the model description, or DriverVer, so the class "
+                  "node cannot be written from it")
+    unresolved = {k: v for k, v in (("ProviderName", provider), ("DriverDesc", driver_desc),
+                                    ("InfSection", section)) if "%" in v}
+    if unresolved:
+        raise Bad(f"{inf_path} leaves a string unresolved: {unresolved}. Add the [Strings] entry or "
+                  "bind by hand; writing a literal %name% into a class node would show up in the "
+                  "guest as a device Windows cannot name")
+
+    return {
+        "InfPath": Path(inf_path).name,
+        "InfSection": section,
+        "ProviderName": provider,
+        "DriverDesc": driver_desc,
+        "MatchingDeviceId": ("pci\\" + device_id).lower(),
+        "Service": SERVICE,
+        "Class": version.get("class", "Display"),
+        "DriverDate": date.strip().strip('"'),
+        "DriverVersion": ver.strip().strip('"'),
+        "provenance": {
+            "model entry": "%s line %d: %s" % (model_line[0], model_line[1], model_line[2]),
+            "Version lines": [l.strip() for _, l in sections.get("Version", [])
+                              if l.split("=")[0].strip().lower()
+                              in ("provider", "class", "classguid", "driverver")],
+            "string for the description": "%s = %r" % (
+                [k for k, v in strings.items() if v == driver_desc][0] if driver_desc in strings.values()
+                else driver_desc, driver_desc),
+        },
+    }
+
+
+def free_class_key(h, class_guid):
+    """The next unused `NNNN` under a class, the number SetupAPI would have taken."""
+    node = descend(h, ["ControlSet001", "Control", "Class", class_guid]) or descend(
+        h, [current_control_set(h), "Control", "Class", class_guid])
+    if node is None:
+        raise Bad(f"this hive has no class key {class_guid}")
+    used = set()
+    for child_node in (h.node_children(node) or []):
+        if re.fullmatch(r"\d{4}", h.node_name(child_node)):
+            used.add(int(h.node_name(child_node)))
+    for n in range(len(used) + 2):
+        if n not in used:
+            return "%04d" % n
+    raise Bad(f"class {class_guid} has no free four-digit subkey below {len(used) + 2}")
+
+
+def classnode_writes(src, binding, class_key):
+    cls = f"{src['control_set']}\\Control\\Class\\{DISPLAY_CLASS}\\{class_key}"
+    writes = [
+        (cls, "InfPath", REG_SZ, binding["InfPath"], "read from the INF's own file name"),
+        (cls, "InfSection", REG_SZ, binding["InfSection"], "the section the INF's model entry names"),
+        (cls, "ProviderName", REG_SZ, binding["ProviderName"], "the INF's Version Provider, resolved"),
+        (cls, "DriverDesc", REG_SZ, binding["DriverDesc"], "the INF's model description, resolved"),
+        (cls, "MatchingDeviceId", REG_SZ, binding["MatchingDeviceId"],
+         "the hardware id the INF matched, lower-cased as SetupAPI stores it"),
+        (cls, "Service", REG_SZ, SERVICE, "the miniport PnP must start for this device"),
+        (cls, "Class", REG_SZ, "Display", "the class both the INF and the device name"),
+        (cls, "DriverDate", REG_SZ, binding["DriverDate"], "from the INF's DriverVer"),
+        (cls, "DriverVersion", REG_SZ, binding["DriverVersion"], "from the INF's DriverVer"),
+        (cls, "ConfigFlags", REG_DWORD, 0, "no install-time flags; the binding is deliberate"),
+        (src["enum_path"], "Driver", REG_SZ, f"{DISPLAY_CLASS}\\{class_key}",
+         "the one value that decides which class node the runtime consults for this devnode"),
+    ]
+    return writes
+
+
+def cmd_classnode(a):
+    """Point the card's class node at its own driver package, or report where it stands."""
+    binding = inf_binding(a.inf, a.device_id)
+    h = open_hive(a.hive)
+    src = facts(h, a.device_id)
+    bound_to = src["class_key"]
+    cls_now = f"{src['control_set']}\\Control\\Class\\{DISPLAY_CLASS}\\{bound_to}"
+    now = value_map(h, descend(h, cls_now.split("\\")))
+
+    def shown(node_values, name):
+        v = node_values.get(name.lower())
+        return "(absent)" if v is None else str(decode(h, v))
+
+    print("device:      %s" % src["enum_path"])
+    print("Driver now:  %s\\%s" % (DISPLAY_CLASS, bound_to))
+    for name in ("InfPath", "InfSection", "DriverDesc", "ProviderName", "Service"):
+        print("  %-15s %s" % (name, shown(now, name)))
+    print("the INF the graft would bind:")
+    for name in ("InfPath", "InfSection", "DriverDesc", "ProviderName", "DriverVersion",
+                 "MatchingDeviceId"):
+        print("  %-15s %s" % (name, binding[name]))
+    for label, line in binding["provenance"].items():
+        print("  from: %-13s %s" % (label, line))
+
+    # Where the values go. A devnode already pointing at a node that carries this INF stays there, so
+    # `--check` grades the binding it finds rather than inventing a new subkey to be disappointed by.
+    already = shown(now, "InfPath") == binding["InfPath"]
+    target = a.class_key or (bound_to if already else free_class_key(h, DISPLAY_CLASS))
+    del h
+    writes = classnode_writes(src, binding, target)
+    print("class subkey: %s (%s)" % (target, "reusing the node it already points at"
+                                     if target == bound_to else "a fresh node, so the old one survives"))
+    print("writes:")
+    for path, name, typ, value, why in writes:
+        print("  %s\\%s = %r  [%s]  %s" % (path, name, value, TYPE_NAMES[typ], why))
+    if a.check:
+        h2 = open_hive(a.hive)
+        node = descend(h2, f"{src['control_set']}\\Control\\Class\\{DISPLAY_CLASS}"
+                           f"\\{target}".split("\\"))
+        vals = value_map(h2, node)
+        inst = value_map(h2, descend(h2, src["enum_path"].split("\\")))
+        driver = inst.get("driver")
+        pointed = driver is not None and str(decode(h2, driver)).endswith("\\" + target)
+        named = "infpath" in vals and str(decode(h2, vals["infpath"])) == binding["InfPath"]
+        del h2
+        if pointed and named:
+            print("verdict: BOUND (the devnode's Driver names a class node that carries this INF)")
+            return 0
+        print("verdict: NOT-BOUND")
+        print("  remedy: registration_graft.py classnode %s --inf %s --apply" % (a.hive, a.inf))
+        return 1
+    if not a.apply:
+        print("print-only: the hive is unchanged. Pass --apply to write, or --check to grade.")
+        return 0
+
+    before = {"enum_path": src["enum_path"], "previous_Driver": "%s\\%s" % (DISPLAY_CLASS, bound_to),
+              "class_key": target, "InfPath": binding["InfPath"]}
+    h = open_hive(a.hive, write=True)
+    for path, name, typ, value, _ in writes:
+        node = descend(h, path.split("\\"), create=True)
+        h.node_set_value(node, {"key": name, "t": typ, "length": len(encode(typ, value)),
+                                "value": encode(typ, value)})
+    h.commit(a.hive)
+    Path(a.record).parent.mkdir(parents=True, exist_ok=True)
+    Path(a.record).write_text(json.dumps(before, indent=2, sort_keys=True) + "\n")
+    print("read back:")
+    h = open_hive(a.hive)
+    vals = value_map(h, descend(h, f"{src['control_set']}\\Control\\Class\\{DISPLAY_CLASS}"
+                                   f"\\{target}".split("\\")))
+    for name in ("InfPath", "InfSection", "Service", "DriverDesc"):
+        print("  %-15s %s" % (name, shown(vals, name)))
+    driver = value_map(h, descend(h, src["enum_path"].split("\\"))).get("driver")
+    print("  Driver          %s" % ("(absent)" if driver is None else decode(h, driver)))
+    print("rollback record: %s" % a.record)
+    return 0
+
 
 
 def cmd_check(a):
@@ -460,11 +673,24 @@ def main():
                    help="ImagePath for the service; the default is the driver volume route")
     g.add_argument("--device-description", default="AMD Radeon R9 290X / 390X")
     g.add_argument("--print-only", action="store_true", help="show the writes, change nothing")
+    n = sub.add_parser("classnode",
+                       help="point the card's Display class node at its own INF, values read from it")
+    n.add_argument("hive")
+    n.add_argument("--inf", required=True, help="the driver INF the values are read from")
+    n.add_argument("--device-id", default=DEVICE_ID)
+    n.add_argument("--class-key", default=None,
+                   help="four-digit class subkey; the default takes the next unused one")
+    n.add_argument("--record", default="classnode-before.json",
+                   help="where the previous Driver value is kept, so the change is one write to undo")
+    n.add_argument("--check", action="store_true", help="grade the hive, change nothing")
+    n.add_argument("--apply", action="store_true", help="write the class node and repoint Driver")
     a = ap.parse_args()
     if a.cmd == "check":
         return cmd_check(a)
     if a.cmd == "graft":
         return cmd_graft(a)
+    if a.cmd == "classnode":
+        return cmd_classnode(a)
     ap.print_help()
     return 2
 

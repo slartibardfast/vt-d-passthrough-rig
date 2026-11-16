@@ -185,6 +185,7 @@ def sha(data):
 # resolves that name against system32, so a selection with no file there is a name pointing at
 # nothing. The casing of the directory on disk is whatever the volume stores; find() settles it.
 SYSTEM32 = "WINDOWS/system32"
+SYSTEM_HIVE = "WINDOWS/system32/config/system"
 DLLCACHE = "WINDOWS/system32/dllcache"
 DLL_NAME_RE = re.compile(r"[A-Za-z0-9_]+\.(dll|DLL)")
 
@@ -198,17 +199,21 @@ def main():
     ap.add_argument("--display-dll", type=Path, default=None,
                     help="copy a driver's user-mode DLL into system32, the file the registry names "
                          "and no install step ever placed")
+    ap.add_argument("--class-binding", type=Path, default=None, metavar="INF",
+                    help="rebind the device's Display class node to the values in this INF, every one "
+                         "of them read from the file rather than typed in")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--record", type=Path, default=None)
     a = ap.parse_args()
     if not a.image.is_file():
         raise Bad("no such image: %s" % a.image)
-    actions = [x for x in (a.bootlog, a.startup_hook, a.runid, a.display_dll) if x]
+    actions = [x for x in (a.bootlog, a.startup_hook, a.runid, a.display_dll, a.class_binding) if x]
     if not actions:
         # A bare --check would report nothing at all and exit 0, which reads as a clean answer to a
         # question nobody asked. Naming the setting is the question.
-        raise Bad("say which setting: --bootlog, --startup-hook <file>, --runid <text>, or "
-                  "--display-dll <file> (add --check to read it back without writing)")
+        raise Bad("say which setting: --bootlog, --startup-hook <file>, --runid <text>, "
+                  "--display-dll <file>, or --class-binding <inf> (add --check to read it back "
+                  "without writing)")
     if a.startup_hook and not a.startup_hook.is_file():
         raise Bad("no such startup hook template: %s" % a.startup_hook)
     if a.display_dll:
@@ -216,6 +221,8 @@ def main():
             raise Bad("no such display DLL to install: %s" % a.display_dll)
         if not DLL_NAME_RE.fullmatch(a.display_dll.name):
             raise Bad("the display DLL must be named like a driver DLL, got %s" % a.display_dll.name)
+    if a.class_binding and not a.class_binding.is_file():
+        raise Bad("no INF to bind the class node from: %s" % a.class_binding)
     if a.runid and not re.fullmatch(r"[A-Za-z0-9._-]{4,64}", a.runid):
         raise Bad("the run id must be a plain token of letters, digits, dot, dash or underscore")
     a_quiet_host()
@@ -340,6 +347,33 @@ def main():
                 print("set display-dll: %s (%s, %d bytes)"
                       % (a.display_dll.name, want[:12], a.display_dll.stat().st_size))
                 expected["display-dll"] = ("sha", want, a.display_dll.name)
+        if a.class_binding:
+            hive = find(MOUNT, SYSTEM_HIVE)
+            if hive is None:
+                raise Bad("no %s on the volume, so there is no class node to bind and the boot would "
+                          "report success while changing nothing" % SYSTEM_HIVE)
+            grade = [sys.executable, str(RIG / "registration_graft.py"), "classnode", str(hive),
+                     "--inf", str(a.class_binding)]
+            if a.check:
+                r = subprocess.run([str(c) for c in ["sudo"] + grade + ["--check"]],
+                                   capture_output=True, text=True)
+                tail = [l for l in (r.stdout + r.stderr).splitlines() if "verdict" in l]
+                print("class-binding: %s" % (tail[-1] if tail else (r.stdout + r.stderr).strip()[:120]))
+                if r.returncode != 0:
+                    missing.append("class-binding")
+            else:
+                r = subprocess.run([str(c) for c in ["sudo"] + grade + ["--apply", "--record",
+                                                                        str(Path(a.record or MOUNT)
+                                                                            / "classnode-before.json")]],
+                                   capture_output=True, text=True)
+                keep = (" from:", "read back", "InfPath", "InfSection", "Driver  ")
+                sys.stdout.write("".join(l + "\n" for l in
+                                         (r.stdout + r.stderr).splitlines()
+                                         if any(k in l for k in keep)))
+                if r.returncode != 0:
+                    raise Bad("the class-node binding failed: %s"
+                              % ((r.stdout + r.stderr).strip()[:400] or "no output"))
+                expected["class-binding"] = ("bound", str(a.class_binding), None)
         umount()
         if a.check:
             if missing:
@@ -381,6 +415,18 @@ def main():
                                    % (have[:12], want[:12]))
                     else:
                         print("read back display-dll: %s (%s)" % (placed.name, have[:12]))
+            elif name == "class-binding":
+                hive = find(MOUNT, SYSTEM_HIVE)
+                r = subprocess.run([str(c) for c in ["sudo", sys.executable,
+                                                     str(RIG / "registration_graft.py"), "classnode",
+                                                     str(hive), "--inf", want, "--check"]],
+                                   capture_output=True, text=True)
+                tail = [l for l in (r.stdout + r.stderr).splitlines() if "verdict" in l]
+                if r.returncode != 0:
+                    bad.append("the class node is not bound after the write: %s"
+                               % (tail[-1] if tail else (r.stdout + r.stderr).strip()[:160]))
+                else:
+                    print("read back class-binding: %s" % (tail[-1] if tail else "BOUND"))
             elif name == "runid":
                 rp = find(MOUNT, RUNID_FILE)
                 if rp is None:
