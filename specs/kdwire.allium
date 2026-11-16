@@ -1,0 +1,708 @@
+-- allium: 3
+-- kdwire.allium -- the kernel-debugger wire contract, as this rig's collector and
+-- the guest's debugger engine were measured to behave.
+--
+-- Scope: the packet exchange between the rig's collector and the kernel-debugger
+-- engine inside the guest: framing, the identity of a packet, the checksum, the
+-- obligation to acknowledge, the hold, and the read limit the engine imposes.
+-- Includes: the header law, the ID LAW (accept only the expected id, flip only on
+-- acceptance), the parity of a reply, refusal and reset handling, the DRAIN-ACK
+-- LAW, the backlog flush taken on entering a hold, module-load capture, naming
+-- every break, the printed-text capture, the file-open refusal, and the endpoint
+-- limit that decides whether a session can be started at all.
+-- Excludes:
+--   - what a command does once its packet is decoded (the grafts and the offline
+--     hive reads are separate subjects)
+--   - the log's text format (an artifact the graders read, not a contract)
+--   - the guest kernel's behaviour behind the engine (the campaign's subject)
+--   - the physical transport, except the one path limit above
+--
+-- Open, and unconfirmed by the operator, so stated here rather than as a design
+-- decision the spec would claim to settle:
+--   - Whether a non-module-load break should keep acknowledging fresh state
+--     changes forever or give up after a bounded wait. The code does the former,
+--     because giving up loses the machine, and no measurement has yet said when
+--     the former is wrong.
+--   - Whether the printed-text capture is part of this contract or an artifact
+--     contract of its own. It is included here because the engine puts that text
+--     on this wire and nowhere else.
+
+------------------------------------------------------------
+-- External Entities
+------------------------------------------------------------
+
+external entity ByteArray {
+    length: Integer
+}
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+entity Endpoint {
+    path: String
+    path_length: Integer
+
+    is_within_limit: path_length <= config.max_endpoint_path_length
+}
+
+entity EndpointRefusal {
+    endpoint: Endpoint
+    limit: Integer
+}
+
+entity Session {
+    state: connecting | listening | held | lost
+    expected_id: Integer
+    own_id: Integer
+    last_issued_id: Integer
+    kernel_base: Integer?
+    last_request: ReadRequest?
+
+    transitions state {
+        connecting -> listening
+        listening -> held
+        held -> listening
+        listening -> lost
+        lost -> connecting
+    }
+
+    -- The pair the engine alternates between. It holds no other value.
+    alternate_id: if expected_id = config.expected_id_base: config.expected_id_base + 1 else: config.expected_id_base
+
+    invariant IdWithinThePair {
+        expected_id = config.expected_id_base
+            or expected_id = config.expected_id_base + 1
+    }
+}
+
+entity Packet {
+    session: Session
+    direction: sent | received
+    kind: data | control
+    exchange: module_load | other_state_change | manipulate_reply | acknowledgement
+            | resend | reset | file_open | text_output | other
+    type_number: Integer
+    api: Integer?
+    id: Integer
+    byte_count: Integer
+    checksum: Integer
+    trailer: Integer
+    payload: ByteArray
+
+    is_control: kind = control
+    is_data: kind = data
+}
+
+entity Reply {
+    session: Session
+    echoes: Packet
+    id: Integer
+}
+
+entity DiscardedRun {
+    session: Session
+    bytes: ByteArray
+}
+
+entity ModuleLoad {
+    session: Session
+    base: Integer
+    name: String
+    answered_id: Integer
+
+    is_kernel_image: kernel_image(name)
+}
+
+entity BreakCapture {
+    session: Session
+    exception_code: Integer
+    address: Integer
+    owner: String
+    offset: Integer
+}
+
+entity PrintedText {
+    session: Session
+    text: String
+}
+
+entity BacklogFlush {
+    session: Session
+    chunks_dropped: Integer
+    parses_only_fresh: Boolean
+}
+
+entity FileRefusal {
+    session: Session
+    path: String
+    status: Integer
+}
+
+entity ReadRequest {
+    session: Session
+    address: Integer
+    length: Integer
+    physical: Boolean
+    payload: ByteArray
+}
+
+entity ReadRefusal {
+    session: Session
+    address: Integer
+    requested: Integer
+    limit: Integer
+}
+
+entity ReadResult {
+    request: ReadRequest
+    status: Integer
+    actual: Integer
+    data: ByteArray
+}
+
+------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+config {
+    -- The encodings below are the contract. Each was read off a captured packet
+    -- or off the engine's own decoded source, never assumed.
+    data_leader: Integer = 808464432              -- 0x30303030
+    control_leader: Integer = 1768515945          -- 0x69696969
+    trailer_byte: Integer = 170                   -- every packet on this wire ends 0xAA
+    header_size: Integer = 16
+    expected_id_base: Integer = 2155872256        -- 0x80800000, where the engine's expectation starts
+    initial_own_id: Integer = 2155874304          -- 0x80800800
+    post_reset_own_id: Integer = 2155872256       -- 0x80800000: a reset restarts both ids
+    checksum_bits: Integer = 32                   -- the sum is 32-bit; a 16-bit field broke packets
+    max_endpoint_path_length: Integer = 108       -- the kernel's cap on a unix socket path
+    max_read_length: Integer = 16                 -- measured: the engine refuses a longer read
+    exchange_state_change: Integer = 7
+    exchange_ack: Integer = 4
+    exchange_resend: Integer = 5
+    exchange_reset: Integer = 6
+    state_load_symbols: Integer = 12337           -- 0x3031
+    api_continue: Integer = 12604                 -- 0x313C, the resume that carries the control set
+    api_read: Integer = 12592                     -- 0x3130
+    api_read_physical: Integer = 12601            -- 0x3139
+    continue_action: Integer = 65538              -- 0x00010002, the documented resume value
+    file_open_status: Integer = 3221225473        -- 0xC0000001: decline, the kernel uses its own copy
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule RefuseAnUnusableEndpoint {
+    when: DialAttempted(session, endpoint)
+
+    requires: not endpoint.is_within_limit
+
+    ensures: EndpointRefusal.created(
+        endpoint: endpoint,
+        limit: config.max_endpoint_path_length
+    )
+    @guidance
+        -- Naming the limit is the point. The transport refuses the same path at
+        -- connect time with an error that says nothing about length, so a
+        -- collector that starts too late is diagnosed hours into a boot, and the
+        -- run has no log to explain itself.
+}
+
+rule OpenTheLink {
+    when: DialAttempted(session, endpoint)
+
+    requires: session.state = connecting
+    requires: endpoint.is_within_limit
+
+    ensures: session.state = listening
+    ensures: session.expected_id = config.expected_id_base
+    ensures: session.own_id = config.initial_own_id
+    ensures: session.last_issued_id = config.initial_own_id
+}
+
+rule RedialAfterALostLink {
+    when: DialAttempted(session, endpoint)
+
+    requires: session.state = lost
+    requires: endpoint.is_within_limit
+
+    ensures: session.state = connecting
+    @guidance
+        -- The state machine restarts, not the process. A run's collector is the
+        -- only witness of its boot, so the link is rebuilt and the log carried
+        -- on into the new session.
+}
+
+rule LoseTheLink {
+    when: SocketClosed(session)
+
+    requires: session.state = listening
+
+    ensures: session.state = lost
+}
+
+rule DiscardUntilAKnownLeader {
+    when: BytesArrived(session, stream)
+
+    requires: not carries_known_leader(stream)
+
+    ensures: DiscardedRun.created(session: session, bytes: stream)
+    ensures: ByteArray.unparsed(bytes: stream)
+    @guidance
+        -- Bytes before a leader are stepped over one at a time until a known
+        -- leader appears. Nothing is parsed from them and nothing is answered.
+}
+
+rule FrameThePacket {
+    when: BytesArrived(session, stream)
+
+    requires: carries_known_leader(stream)
+
+    ensures: Packet.created(
+        session: session,
+        direction: received,
+        kind: kind_of(stream),
+        exchange: exchange_of(stream),
+        type_number: type_number_of(stream),
+        id: id_of(stream),
+        byte_count: framed_byte_count(stream),
+        checksum: checksum_of(stream),
+        trailer: config.trailer_byte,
+        payload: payload_of(stream)
+    )
+    @guidance
+        -- A control packet carries no payload, so a nonzero count on a control
+        -- leader means the stream lost its place. The count is framed as zero
+        -- and the next read resynchronises on a leader rather than trusting a
+        -- length that cannot be right.
+}
+
+rule ContinueAfterAModuleLoad {
+    when: packet: Packet.created
+
+    requires: packet.exchange = module_load
+
+    let body = continue_body(packet.session, config.api_continue, config.continue_action)
+
+    ensures: Reply.created(
+        session: packet.session,
+        echoes: packet,
+        id: packet.id
+    )
+    ensures: Packet.created(
+        session: packet.session,
+        direction: sent,
+        kind: data,
+        exchange: other,
+        type_number: config.exchange_state_change,
+        api: config.api_continue,
+        id: packet.session.expected_id,
+        byte_count: body.length,
+        checksum: full_sum(body, config.checksum_bits),
+        trailer: config.trailer_byte,
+        payload: body
+    )
+    ensures: ModuleLoad.created(
+        session: packet.session,
+        base: module_base(packet),
+        name: module_name(packet),
+        answered_id: packet.id
+    )
+    ensures: packet.session.last_issued_id = packet.session.expected_id
+    @guidance
+        -- THE DRAIN-ACK LAW, first instance: the load must be acknowledged or the
+        -- engine re-sends it forever and its continue-wait never runs behind the
+        -- ack. THE PARITY LAW: the ack carries the id of the packet being
+        -- answered. The resume carries the documented continue value; answering
+        -- a load with a version request instead removes the engine's fallback,
+        -- and it waits forever, which was tried and measured.
+}
+
+rule NoteTheKernelBase {
+    when: load: ModuleLoad.created
+
+    requires: load.is_kernel_image
+    requires: not exists load.session.kernel_base
+
+    ensures: load.session.kernel_base = load.base
+    @guidance
+        -- The first kernel load of a session sets the base every later break is
+        -- measured against. Re-recording it would re-classify breaks taken in a
+        -- different session.
+}
+
+rule HoldTheMachineOnAnUnmodelledBreak {
+    when: packet: Packet.created
+
+    requires: packet.exchange = other_state_change
+
+    let address = exception_address_of(packet)
+
+    ensures: Reply.created(
+        session: packet.session,
+        echoes: packet,
+        id: packet.id
+    )
+    ensures: packet.session.state = held
+    ensures: BreakCapture.created(
+        session: packet.session,
+        exception_code: exception_code_of(packet),
+        address: address,
+        owner: owning_module(packet.session, address),
+        offset: address - owner_base(packet.session, address)
+    )
+    ensures: BacklogFlush.created(
+        session: packet.session,
+        chunks_dropped: discarded_chunks(packet.session),
+        parses_only_fresh: true
+    )
+    @guidance
+        -- The freeze is the feature: a bugcheck arrives as a state change, and
+        -- the machine is left standing with its state intact for offline
+        -- analysis. Before waiting, everything unread is discarded raw until the
+        -- link goes quiet, because hours of stale replies would otherwise be
+        -- parsed as if they answered this hold. The ack still goes out, and
+        -- continues to go out for every state change that arrives while held.
+}
+
+rule ReleaseTheHold {
+    when: HoldReleased(session)
+
+    requires: session.state = held
+
+    let body = continue_body(session, config.api_continue, config.continue_action)
+
+    ensures: session.state = listening
+    ensures: Packet.created(
+        session: session,
+        direction: sent,
+        kind: data,
+        exchange: other,
+        type_number: config.exchange_state_change,
+        api: config.api_continue,
+        id: session.expected_id,
+        byte_count: body.length,
+        checksum: full_sum(body, config.checksum_bits),
+        trailer: config.trailer_byte,
+        payload: body
+    )
+    ensures: session.last_issued_id = session.expected_id
+}
+
+rule RefuseAReadPastTheEngineLimit {
+    when: ReadRequested(session, address, length, physical)
+
+    requires: length > config.max_read_length
+
+    ensures: ReadRefusal.created(
+        session: session,
+        address: address,
+        requested: length,
+        limit: config.max_read_length
+    )
+    @guidance
+        -- Measured, not documented: a request longer than the limit comes back
+        -- refused. The reader walks in steps of the limit instead, which is
+        -- specified in walk.allium rather than hidden inside the wire here.
+}
+
+rule AskForTheRead {
+    when: ReadRequested(session, address, length, physical)
+
+    requires: length > 0
+    requires: length <= config.max_read_length
+
+    let body = read_request_payload(address, length, physical)
+
+    ensures: ReadRequest.created(
+        session: session,
+        address: address,
+        length: length,
+        physical: physical,
+        payload: body
+    )
+    ensures: session.last_request = the_request
+}
+
+rule IssueOnTheExpectedId {
+    when: RequestIssued(session, request)
+
+    requires: session.state = listening
+
+    ensures: Packet.created(
+        session: session,
+        direction: sent,
+        kind: data,
+        exchange: other,
+        type_number: config.exchange_state_change,
+        api: requested_api(request),
+        id: session.expected_id,
+        byte_count: request.payload.length,
+        checksum: full_sum(request.payload, config.checksum_bits),
+        trailer: config.trailer_byte,
+        payload: request.payload
+    )
+    ensures: session.last_issued_id = session.expected_id
+    @guidance
+        -- THE ID LAW, from the sender's side. The engine holds an expected id,
+        -- accepts a data packet only when its id equals that value, flips it only
+        -- on acceptance, and refuses anything else. So the id is taken from the
+        -- engine's expectation, and issuing a request never advances it: the
+        -- flip belongs to the acknowledgement, or a re-sent request would be
+        -- refused as a duplicate of itself.
+}
+
+rule FlipOnlyOnAnAcceptedId {
+    when: packet: Packet.created
+
+    requires: packet.exchange = acknowledgement
+    requires: packet.id = packet.session.last_issued_id
+
+    ensures: packet.session.expected_id = packet.session.alternate_id
+    @guidance
+        -- The engine flips its own expectation when it accepts, so the collector
+        -- flips in step with the acceptance and not with the send. An
+        -- acknowledgement for any other id leaves the pair where it was: the
+        -- frame is the law here, and a stale ack must not advance the pair.
+}
+
+rule RepeatTheIdOnARefusal {
+    when: packet: Packet.created
+
+    requires: packet.exchange = resend
+    requires: exists packet.session.last_request
+
+    ensures: Packet.created(
+        session: packet.session,
+        direction: sent,
+        kind: data,
+        exchange: other,
+        type_number: config.exchange_state_change,
+        api: requested_api(packet.session.last_request),
+        id: packet.session.last_issued_id,
+        byte_count: packet.session.last_request.payload.length,
+        checksum: full_sum(packet.session.last_request.payload, config.checksum_bits),
+        trailer: config.trailer_byte,
+        payload: packet.session.last_request.payload
+    )
+    @guidance
+        -- A refusal is not a new request. The same bytes go out again under the
+        -- same id; issuing on a fresh id is how a retry is taken for a duplicate
+        -- and refused a second time, forever.
+}
+
+rule RestartBothIdsOnAReset {
+    when: packet: Packet.created
+
+    requires: packet.exchange = reset
+
+    ensures: Reply.created(
+        session: packet.session,
+        echoes: packet,
+        id: packet.id
+    )
+    ensures: packet.session.expected_id = config.expected_id_base
+    ensures: packet.session.own_id = config.post_reset_own_id
+    @guidance
+        -- The engine restarts both counters at their base on a reset, so a
+        -- collector that kept its own value is out of step with a target that
+        -- will then refuse every packet it is sent.
+}
+
+rule DeclineAFileOpen {
+    when: packet: Packet.created
+
+    requires: packet.exchange = file_open
+
+    let body = file_open_decline_body(config.file_open_status)
+
+    ensures: Reply.created(
+        session: packet.session,
+        echoes: packet,
+        id: packet.id
+    )
+    ensures: FileRefusal.created(
+        session: packet.session,
+        path: opened_path(packet),
+        status: config.file_open_status
+    )
+    ensures: Packet.created(
+        session: packet.session,
+        direction: sent,
+        kind: data,
+        exchange: other,
+        type_number: config.exchange_state_change,
+        id: packet.session.expected_id,
+        byte_count: body.length,
+        checksum: full_sum(body, config.checksum_bits),
+        trailer: config.trailer_byte,
+        payload: body
+    )
+    ensures: packet.session.last_issued_id = packet.session.expected_id
+    @guidance
+        -- The engine offers a file open so a debugger can supply a newer copy.
+        -- This collector has no such role and declines with the documented
+        -- refusal, so the guest uses its own bytes and the run's evidence stays
+        -- the image the run booted.
+}
+
+rule RecordPrintedText {
+    when: packet: Packet.created
+
+    requires: packet.exchange = text_output
+
+    ensures: Reply.created(
+        session: packet.session,
+        echoes: packet,
+        id: packet.id
+    )
+    ensures: PrintedText.created(
+        session: packet.session,
+        text: printable_text(packet)
+    )
+    @guidance
+        -- This is the only route by which the driver's own assertion text
+        -- reaches the host, and the campaign's PowerPlay verdict is graded from
+        -- it, so the capture is part of the wire contract, not a log detail.
+}
+
+rule DeliverTheReadResult {
+    when: packet: Packet.created
+
+    requires: packet.exchange = manipulate_reply
+    requires: answers_read(packet)
+
+    ensures: Reply.created(
+        session: packet.session,
+        echoes: packet,
+        id: packet.id
+    )
+    ensures: ReadResult.created(
+        request: packet.session.last_request,
+        status: reply_status(packet),
+        actual: reply_actual(packet),
+        data: reply_bytes(packet)
+    )
+}
+
+rule AcknowledgeAManipulateReply {
+    when: packet: Packet.created
+
+    requires: packet.exchange = manipulate_reply
+    requires: not answers_read(packet)
+
+    ensures: Reply.created(
+        session: packet.session,
+        echoes: packet,
+        id: packet.id
+    )
+}
+
+rule AcknowledgeAnUnmodelledExchange {
+    when: packet: Packet.created
+
+    requires: packet.exchange = other
+
+    ensures: Reply.created(
+        session: packet.session,
+        echoes: packet,
+        id: packet.id
+    )
+    @guidance
+        -- Acknowledging an exchange this spec does not model keeps the session
+        -- alive. Refusing to answer it would cost the run its only witness.
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant ChecksumIsTheFullSum {
+    -- The header carries the whole 32-bit sum of the payload. A truncated 16-bit
+    -- checksum passed for small payloads and broke every larger one, and the
+    -- symptom was a refusal that named nothing about the cause.
+    for p in Packets:
+        p.direction = sent and p.is_data
+            implies p.checksum = full_sum(p.payload, config.checksum_bits)
+}
+
+invariant ControlPacketsCarryNoChecksum {
+    for p in Packets:
+        p.direction = sent and p.is_control implies p.checksum = 0
+}
+
+invariant TrailerEndsEveryPacket {
+    for p in Packets:
+        p.trailer = config.trailer_byte
+}
+
+invariant SentPayloadLengthIsTheByteCount {
+    for p in Packets:
+        p.direction = sent implies p.byte_count = p.payload.length
+}
+
+invariant ReplyCarriesTheAnsweredId {
+    -- THE PARITY LAW as a property of every reply on the wire.
+    for r in Replies:
+        r.id = r.echoes.id
+}
+
+invariant SentIdIsExpectedOrLastIssued {
+    -- The sender's half of the ID LAW. An issued request carries the engine's
+    -- current expectation; a repeated one carries the id last issued.
+    for p in Packets:
+        p.direction = sent and p.is_data
+            implies p.id = p.session.expected_id or p.id = p.session.last_issued_id
+}
+
+invariant ReadWithinTheEngineLimit {
+    for r in ReadRequests:
+        r.length <= config.max_read_length
+}
+
+invariant ReadIsNotEmpty {
+    for r in ReadRequests:
+        r.length > 0
+}
+
+invariant ResultNoLongerThanRequested {
+    for r in ReadResults:
+        r.actual <= r.request.length
+}
+
+invariant HighestBaseOwnsTheAddress {
+    -- The owner of an address is the module with the highest base not above it.
+    -- Taking the first match in ascending order lets a gap before the next module
+    -- swallow a later module's whole range, which is how a measured break was
+    -- once attributed to the wrong driver.
+    for c in BreakCaptures:
+        for m in ModuleLoads:
+            m.session = c.session and m.base > owner_base(c.session, c.address)
+                implies m.base > c.address
+}
+
+invariant OffsetIsFromTheOwner {
+    for c in BreakCaptures:
+        c.address = owner_base(c.session, c.address) + c.offset
+}
+
+invariant BacklogDropsNothingNegativeAndParsesOnlyFresh {
+    for f in BacklogFlushes:
+        f.chunks_dropped >= 0 and f.parses_only_fresh
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface Collector {
+    provides:
+        DialAttempted(session, endpoint)
+        BytesArrived(session, stream)
+        SocketClosed(session)
+        HoldReleased(session)
+        RequestIssued(session, request)
+        ReadRequested(session, address, length, physical)
+}

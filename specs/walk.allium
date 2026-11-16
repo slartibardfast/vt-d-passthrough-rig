@@ -1,0 +1,333 @@
+-- allium: 3
+-- walk.allium -- reading guest memory through the collector, one bounded step at a time.
+--
+-- Scope: the reader that asks the kernel-debugger engine for bytes it cannot see any other way.
+-- Includes: the engine's read limit and the reader's clamp, what counts as a definitive answer, the
+-- single retrigger on silence, the alternation of ids between two attempts, walking a block in steps
+-- that advance by what actually arrived, and reporting where a stalled walk stopped.
+-- Excludes:
+--   - the wire itself: the packet layout, the ID LAW and the acknowledgement duty are specified in
+--     kdwire.allium and pointed at from here, never restated
+--   - what the bytes mean (a page-table walk is arithmetic over them, not this contract)
+--   - the file the request travels through, which is this rig's plumbing
+--
+-- Open, and unconfirmed by the operator, so stated rather than settled:
+--   - Whether a step that is refused should abort the whole walk or leave the caller to decide. The
+--     code stops and reports how far it got, which is the conservative reading, and no measurement
+--     has yet said a partial block is ever worth keeping.
+
+------------------------------------------------------------
+-- External Entities
+------------------------------------------------------------
+
+external entity ByteArray {
+    length: Integer
+}
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+entity BlockWalk {
+    address: Integer
+    total: Integer
+    reached: Integer
+    -- `partial`, not `stalled`: the walk stopped short and keeps what it gathered. The step that
+    -- stopped it is the thing that stalled, and the two names were one word until the checker could
+    -- not tell which entity's `stalled` an assignment meant.
+    status: walking | complete | partial
+
+    transitions status {
+        walking -> complete
+        walking -> partial
+        terminal: complete, partial
+    }
+
+    remaining: if total > reached: total - reached else: 0
+}
+
+entity Read {
+    walk: BlockWalk
+    address: Integer
+    requested: Integer
+    clamped: Integer
+    attempts: Integer
+    count: Integer
+    status: unanswered | answered | refused | stalled
+    bytes: ByteArray? when status = answered
+
+    transitions status {
+        unanswered -> answered
+        unanswered -> refused
+        unanswered -> stalled
+        terminal: answered, refused, stalled
+    }
+
+    arrived: if status = answered: count else: 0
+
+    invariant StepWithinTheEngineLimit {
+        clamped <= config.max_step_length
+    }
+
+    invariant StepIsNotEmpty {
+        clamped > 0
+    }
+
+    invariant AttemptsWithinTheBound {
+        attempts <= config.max_attempts
+    }
+
+    invariant RefusalIsDefinitive {
+        status = refused implies attempts = 1
+    }
+
+    invariant SilenceIsTriedTwice {
+        status = stalled implies attempts = config.max_attempts
+    }
+}
+
+entity Attempt {
+    read: Read
+    ordinal: Integer
+    request_id: Integer
+}
+
+------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+config {
+    -- Both values are measurements of the engine, not settings chosen for convenience.
+    max_step_length: Integer = 16     -- measured: the engine refuses a longer request outright
+    max_attempts: Integer = 2         -- a request, then one retrigger; a third ask is a stall
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule BeginTheWalk {
+    when: BlockWalkRequested(address, total)
+
+    requires: total > 0
+
+    ensures: BlockWalk.created(
+        address: address,
+        total: total,
+        reached: 0,
+        status: walking
+    )
+    ensures: Read.created(
+        walk: the_walk,
+        address: address,
+        requested: at_most(total, config.max_step_length),
+        clamped: at_most(total, config.max_step_length),
+        attempts: 0,
+        count: 0,
+        status: unanswered
+    )
+    @guidance
+        -- THE CLAMP. The engine refuses any request longer than its limit, and it refuses without
+        -- saying why, so the reader never asks. A block longer than the limit becomes a walk whose
+        -- first step is already inside it.
+}
+
+rule IssueARead {
+    when: ReadSent(read)
+
+    requires: read.status = unanswered
+    requires: read.attempts < config.max_attempts
+
+    ensures: Attempt.created(
+        read: read,
+        ordinal: read.attempts + 1,
+        request_id: issued_id(read)
+    )
+    ensures: read.attempts = read.attempts + 1
+    @guidance
+        -- The request goes out on the id the engine currently expects, which is a wire law stated in
+        -- kdwire.allium. What belongs to the reader is only that each attempt is one request, counted.
+}
+
+rule TakeTheAnswer {
+    when: ReplyRead(read)
+
+    requires: read.status = unanswered
+    requires: reply_arrived(read)
+
+    ensures: read.status = answered
+    ensures: read.count = reply_count(read)
+    ensures: read.bytes = ByteArray.of_length(length: reply_count(read))
+    @guidance
+        -- The engine's own count is the length of the answer. The dump it wrote can hold more lines
+        -- than it claims, and a reader that trusts the lines over the count invents bytes.
+}
+
+rule EndOnADefinitiveRefusal {
+    when: ReplyRead(read)
+
+    requires: read.status = unanswered
+    requires: reply_refused(read)
+
+    ensures: read.status = refused
+    @guidance
+        -- A refusal is an answer, not a silence. Retrying it does not change the engine's mind and it
+        -- costs the boot the window in which its state was still interesting. This law was dead for
+        -- weeks because a second definition of the waiting function shadowed the one that recorded
+        -- the status, and the symptom was only that every refused read took twice as long.
+}
+
+rule RetryOnceOnSilence {
+    when: ReplyRead(read)
+
+    requires: read.status = unanswered
+    requires: not reply_arrived(read)
+    requires: not reply_refused(read)
+    requires: read.attempts < config.max_attempts
+
+    ensures: ReadSent(read)
+    @guidance
+        -- THE ALTERNATION LAW. Silence is ambiguous, so the request is issued a second time, and
+        -- because the acknowledgement of the first attempt flipped the pair, the retry lands on the
+        -- other id. A retry on the same id would be the packet the engine already refused.
+}
+
+rule StallAfterTheSecondSilence {
+    when: ReplyRead(read)
+
+    requires: read.status = unanswered
+    requires: not reply_arrived(read)
+    requires: not reply_refused(read)
+    requires: read.attempts = config.max_attempts
+
+    ensures: read.status = stalled
+}
+
+rule AdvanceTheWalk {
+    when: read: Read.status transitions_to answered
+
+    requires: read.walk.status = walking
+    requires: read.walk.reached + read.arrived < read.walk.total
+
+    let done = read.walk.reached + read.arrived
+
+    ensures: read.walk.reached = done
+    ensures: Read.created(
+        walk: read.walk,
+        address: read.address + read.arrived,
+        requested: at_most(read.walk.total - done, config.max_step_length),
+        clamped: at_most(read.walk.total - done, config.max_step_length),
+        attempts: 0,
+        count: 0,
+        status: unanswered
+    )
+    @guidance
+        -- The walk advances by the bytes that arrived, never by the size of the step that was asked
+        -- for. A short answer followed by a full-size step would read the same address twice and
+        -- present the gap as contiguous memory. This rule is the whole of that law: it is offered
+        -- only while the block still has room, and the rule that closes it is the one whose guard
+        -- says the room is gone.
+}
+
+rule FinishTheWalk {
+    when: read: Read.status transitions_to answered
+
+    requires: read.walk.status = walking
+    requires: read.walk.reached + read.arrived >= read.walk.total
+
+    ensures: read.walk.reached = read.walk.reached + read.arrived
+    ensures: WalkFinished(walk: read.walk)
+    @guidance
+        -- This guard is what separates the rule that steps on from the one that closes: the block is
+        -- covered once the bytes that arrived reach its total.
+        -- The last step is usually the short one, so the walk ends on an answer that did not fill a
+        -- step. Ending on a full step is the case where the block was a whole number of steps.
+}
+
+rule StopTheWalkAtAGap {
+    when: read: Read.status transitions_to stalled
+
+    requires: read.walk.status = walking
+
+    ensures: WalkStopped(walk: read.walk)
+}
+
+rule StopTheWalkAtARefusal {
+    when: read: Read.status transitions_to refused
+
+    requires: read.walk.status = walking
+
+    ensures: WalkStopped(walk: read.walk)
+    @guidance
+        -- The walk reports where it got to rather than what it was asked for. A caller that reads a
+        -- partial block as if it were whole is the failure mode this report exists to prevent.
+}
+
+rule CompleteTheWalk {
+    when: WalkFinished(walk)
+
+    requires: walk.status = walking
+
+    ensures: walk.status = complete
+}
+
+rule StopTheWalk {
+    when: WalkStopped(walk)
+
+    requires: walk.status = walking
+
+    ensures: walk.status = partial
+    @guidance
+        -- Partial is not failed and not complete: the bytes that arrived are kept, and `reached`
+        -- says how far they run. Two reasons land here, a silence that outlasted the retries and a
+        -- refusal, and the walk does not distinguish them because its caller cannot do anything
+        -- different about either.
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant NoStepBeyondWhatWasAsked {
+    for r in Reads:
+        r.walk.reached + r.clamped <= r.walk.total
+}
+
+invariant AnswerIsCutToItsCount {
+    for r in Reads:
+        r.status = answered implies r.bytes.length = r.count
+}
+
+invariant AttemptsAlternateIds {
+    -- THE ALTERNATION LAW as a property of the attempts themselves: two tries at one read never carry
+    -- the same request id, because the pair flips between them.
+    for a in Attempts:
+        for b in Attempts:
+            a.read = b.read and a.ordinal < b.ordinal implies a.request_id != b.request_id
+}
+
+invariant WalkReachedIsWhatArrived {
+    for w in BlockWalks:
+        w.reached = arrived_total(w)
+}
+
+invariant AFinishedWalkHasNothingLeft {
+    for w in BlockWalks:
+        w.status = complete implies w.remaining = 0
+}
+
+invariant APartialWalkIsNotWhole {
+    for w in BlockWalks:
+        w.status = partial implies w.reached < w.total
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface Reader {
+    provides:
+        BlockWalkRequested(address, total)
+        ReadSent(read)
+        ReplyRead(read)
+}

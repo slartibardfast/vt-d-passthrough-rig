@@ -1,0 +1,84 @@
+# walk.obligations -- disposition for every `allium plan` obligation of walk.allium.
+# Gate: host-lifecycle obligations specs/walk.allium --tests tests --strict-discharge
+#   <id> => test:<name> [exercises=<symbol>] | structural | waived: <reason>
+# `structural` is only ever a declared shape: field presence and types, an optional
+# field's two cases, a declared terminal or rejected transition, a surface's actor.
+# Nothing behavioural is dispositioned structural, because the check lane does not
+# discharge behaviour and a relabel is the dodge this gate exists to catch.
+#
+# Two laws carry this spec. THE CLAMP is measured at the command file, not at a
+# function's argument, because the collector forwards whatever it is asked and only the reader
+# clamps. THE ALTERNATION LAW is discharged across the seam: the retry policy lives in `kd_read`
+# and the fact that makes a retry worth sending lives on the wire, so one walk obligation names a
+# wire test.
+
+entity-fields.ByteArray                                  => structural
+transition-edge.BlockWalk.walking.complete               => test:test_a_walk_of_exactly_the_limit_is_one_step exercises=read_block
+transition-edge.BlockWalk.walking.partial                => test:test_a_stalled_walk_reports_where_it_stopped exercises=read_block
+transition-rejected.BlockWalk.status                     => structural
+transition-terminal.BlockWalk.status                     => structural
+entity-fields.BlockWalk                                  => structural
+when-presence.Read.bytes                                 => structural
+transition-edge.Read.unanswered.answered                 => test:test_a_read_that_arrives_is_not_retried_at_all exercises=kd_read
+transition-edge.Read.unanswered.refused                  => test:test_an_answered_refusal_is_not_retried exercises=kd_read
+transition-edge.Read.unanswered.stalled                  => test:test_silence_retriggers_the_read_exactly_once exercises=kd_read
+transition-rejected.Read.status                          => structural
+transition-terminal.Read.status                          => structural
+invariant.Read.StepWithinTheEngineLimit                  => test:test_no_request_asks_for_more_than_the_limit_across_a_whole_walk exercises=MAXRD
+invariant.Read.StepIsNotEmpty                            => test:test_a_zero_length_read_is_never_issued exercises=read_block
+invariant.Read.AttemptsWithinTheBound                    => test:test_silence_retriggers_the_read_exactly_once exercises=kd_read
+invariant.Read.RefusalIsDefinitive                       => test:test_an_answered_refusal_is_not_retried exercises=_last_ret
+invariant.Read.SilenceIsTriedTwice                       => test:test_silence_retriggers_the_read_exactly_once exercises=Waiting
+entity-fields.Read                                       => structural
+entity-optional.Read.bytes                               => structural
+entity-fields.Attempt                                    => structural
+config-default.max_step_length                           => test:test_a_read_is_clamped_to_the_length_the_engine_answers exercises=MAXRD
+config-default.max_attempts                              => test:test_silence_retriggers_the_read_exactly_once exercises=kd_read
+rule-success.BeginTheWalk                                => test:test_a_read_is_clamped_to_the_length_the_engine_answers exercises=MAXRD
+rule-failure.BeginTheWalk.1                              => test:test_a_zero_length_read_is_never_issued exercises=read_block
+rule-entity-creation.BeginTheWalk.1                      => test:test_a_walk_of_exactly_the_limit_is_one_step exercises=BlockWalk
+rule-entity-creation.BeginTheWalk.2                      => test:test_a_read_is_clamped_to_the_length_the_engine_answers exercises=MAXRD
+rule-success.IssueARead                                  => test:test_a_read_that_arrives_is_not_retried_at_all exercises=kd_read
+rule-failure.IssueARead.1                                => test:test_a_read_that_arrives_is_not_retried_at_all exercises=kd_read
+rule-failure.IssueARead.2                                => test:test_a_read_that_arrives_is_not_retried_at_all exercises=kd_read
+rule-entity-creation.IssueARead.1                        => test:test_a_read_that_arrives_is_not_retried_at_all exercises=kd_read
+rule-success.TakeTheAnswer                               => test:test_the_reply_is_read_from_the_log_and_cut_to_what_arrived exercises=_wait_read
+rule-failure.TakeTheAnswer.1                             => test:test_the_reply_is_read_from_the_log_and_cut_to_what_arrived exercises=_wait_read
+rule-failure.TakeTheAnswer.2                             => test:test_the_reply_is_read_from_the_log_and_cut_to_what_arrived exercises=_wait_read
+rule-success.EndOnADefinitiveRefusal                     => test:test_an_answered_refusal_is_not_retried exercises=_last_ret
+rule-failure.EndOnADefinitiveRefusal.1                   => test:test_an_answered_refusal_is_not_retried exercises=_last_ret
+rule-failure.EndOnADefinitiveRefusal.2                   => test:test_an_answered_refusal_is_not_retried exercises=_last_ret
+rule-success.RetryOnceOnSilence                          => test:test_silence_retriggers_the_read_exactly_once exercises=Waiting
+rule-failure.RetryOnceOnSilence.1                        => test:test_silence_retriggers_the_read_exactly_once exercises=Waiting
+rule-failure.RetryOnceOnSilence.2                        => test:test_silence_retriggers_the_read_exactly_once exercises=Waiting
+rule-failure.RetryOnceOnSilence.3                        => test:test_silence_retriggers_the_read_exactly_once exercises=Waiting
+rule-failure.RetryOnceOnSilence.4                        => test:test_silence_retriggers_the_read_exactly_once exercises=Waiting
+rule-success.StallAfterTheSecondSilence                  => test:test_silence_retriggers_the_read_exactly_once exercises=Waiting
+rule-failure.StallAfterTheSecondSilence.1                => test:test_silence_retriggers_the_read_exactly_once exercises=Waiting
+rule-failure.StallAfterTheSecondSilence.2                => test:test_silence_retriggers_the_read_exactly_once exercises=Waiting
+rule-failure.StallAfterTheSecondSilence.3                => test:test_silence_retriggers_the_read_exactly_once exercises=Waiting
+rule-failure.StallAfterTheSecondSilence.4                => test:test_silence_retriggers_the_read_exactly_once exercises=Waiting
+rule-success.AdvanceTheWalk                              => test:test_a_block_walk_advances_by_the_bytes_actually_returned exercises=read_block
+rule-failure.AdvanceTheWalk.1                            => test:test_a_block_walk_advances_by_the_bytes_actually_returned exercises=read_block
+rule-failure.AdvanceTheWalk.2                            => test:test_a_block_walk_advances_by_the_bytes_actually_returned exercises=read_block
+rule-entity-creation.AdvanceTheWalk.1                    => test:test_a_block_walk_advances_by_the_bytes_actually_returned exercises=read_block
+rule-success.FinishTheWalk                               => test:test_a_walk_of_exactly_the_limit_is_one_step exercises=read_block
+rule-failure.FinishTheWalk.1                             => test:test_a_walk_of_exactly_the_limit_is_one_step exercises=read_block
+rule-failure.FinishTheWalk.2                             => test:test_a_walk_of_exactly_the_limit_is_one_step exercises=read_block
+rule-success.StopTheWalkAtAGap                           => test:test_a_stalled_walk_reports_where_it_stopped exercises=read_block
+rule-failure.StopTheWalkAtAGap.1                         => test:test_a_stalled_walk_reports_where_it_stopped exercises=read_block
+rule-success.StopTheWalkAtARefusal                       => test:test_an_answered_refusal_is_not_retried exercises=kd_read
+rule-failure.StopTheWalkAtARefusal.1                     => test:test_an_answered_refusal_is_not_retried exercises=kd_read
+rule-success.CompleteTheWalk                             => test:test_a_walk_of_exactly_the_limit_is_one_step exercises=read_block
+rule-failure.CompleteTheWalk.1                           => test:test_a_walk_of_exactly_the_limit_is_one_step exercises=read_block
+rule-success.StopTheWalk                                 => test:test_a_stalled_walk_reports_where_it_stopped exercises=read_block
+rule-failure.StopTheWalk.1                               => test:test_a_stalled_walk_reports_where_it_stopped exercises=read_block
+invariant.NoStepBeyondWhatWasAsked                       => test:test_no_request_asks_for_more_than_the_limit_across_a_whole_walk exercises=MAXRD
+invariant.AnswerIsCutToItsCount                          => test:test_a_reply_longer_than_its_count_is_discarded_not_trusted exercises=read_dump
+invariant.AttemptsAlternateIds                           => test:test_two_requests_across_an_ack_carry_the_other_id exercises=kd_expected
+invariant.WalkReachedIsWhatArrived                       => test:test_a_block_walk_advances_by_the_bytes_actually_returned exercises=read_block
+invariant.AFinishedWalkHasNothingLeft                    => test:test_a_walk_of_exactly_the_limit_is_one_step exercises=read_block
+invariant.APartialWalkIsNotWhole                         => test:test_a_stalled_walk_reports_where_it_stopped exercises=read_block
+surface-actor.Reader                                     => structural
+surface-provides.Reader                                  => test:test_a_read_is_clamped_to_the_length_the_engine_answers exercises=kd_read
+when-set.TakeTheAnswer.Read.bytes                        => structural

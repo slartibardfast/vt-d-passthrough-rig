@@ -27,6 +27,8 @@ jobs:
         run: |
           allium plan specs/szdd.allium
           allium plan specs/patch.allium
+          allium plan specs/kdwire.allium
+          allium plan specs/walk.allium
       - name: tests
         run: |
           python -m venv venv
@@ -40,3 +42,21 @@ jobs:
           cargo install --git https://github.com/connollydavid/host-lifecycle host-lifecycle
           host-lifecycle obligations specs/szdd.allium --tests tests --strict-discharge
           host-lifecycle obligations specs/patch.allium --tests tests --strict-discharge
+          host-lifecycle obligations specs/kdwire.allium --tests tests --strict-discharge
+          host-lifecycle obligations specs/walk.allium --tests tests --strict-discharge
+      - name: run the disposition runners
+        run: |
+          # `--strict-discharge` proves a disposition names a real test and a real symbol. It cannot
+          # prove the named test passes. The dispositions are shell runners, so this step runs every
+          # one of them: a link that points at a failing test reddens the lane here rather than
+          # reading as a discharged obligation.
+          set -u
+          source ./tests/dispositions.sh
+          failed=0
+          for name in $(grep -oE '^[a-z0-9_]+\(\) \{' tests/dispositions.sh | sed 's/() {//'); do
+            if ! "$name" > /dev/null; then
+              echo "RUNNER FAILED  $name"
+              failed=1
+            fi
+          done
+          exit "$failed"

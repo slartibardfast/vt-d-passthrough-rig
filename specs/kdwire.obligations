@@ -1,0 +1,151 @@
+# kdwire.obligations -- disposition for every `allium plan` obligation of kdwire.allium.
+# Gate: host-lifecycle obligations specs/kdwire.allium --tests tests --strict-discharge
+#   <id> => test:<name> [exercises=<symbol>] | structural | waived: <reason>
+# `structural` is only ever a declared shape: field presence and types, an optional
+# field's two cases, a declared terminal or rejected transition, a surface's actor.
+# Nothing behavioural is dispositioned structural, because the check lane does not
+# discharge behaviour and a relabel is the dodge this gate exists to catch.
+#
+# The law names, and where each is measured. THE ID LAW is the pair
+# `IssueOnTheExpectedId` and `FlipOnlyOnAnAcceptedId`, and the flip is asserted in both directions:
+# an acknowledgement of the id last issued moves the pair, one of any other id does not. THE PARITY
+# LAW is one invariant over every reply, discharged wherever a reply is built. THE DRAIN-ACK LAW is
+# discharged by the hold, which answers an awaited packet while the machine is frozen. THE BACKLOG
+# FLUSH is the count of stale chunks the hold-entry log records.
+
+entity-fields.ByteArray                                  => structural
+entity-fields.Endpoint                                   => structural
+derived.Endpoint.is_within_limit                         => test:test_an_endpoint_too_long_to_bind_is_refused_before_the_boot exercises=MAX_ENDPOINT_PATH
+entity-fields.EndpointRefusal                            => structural
+transition-edge.Session.connecting.listening             => test:test_a_closed_link_is_reported_as_lost_and_redialled exercises=connect_wait
+transition-edge.Session.listening.held                   => test:test_an_unmodelled_state_change_holds_the_machine_and_still_acks exercises=HOLD_RELEASE
+transition-edge.Session.held.listening                   => test:test_an_unmodelled_state_change_holds_the_machine_and_still_acks exercises=HOLD_RELEASE
+transition-edge.Session.listening.lost                   => test:test_a_closed_link_is_reported_as_lost_and_redialled exercises=link lost
+transition-edge.Session.lost.connecting                  => test:test_a_closed_link_is_reported_as_lost_and_redialled exercises=connect_wait
+transition-rejected.Session.state                        => structural
+invariant.Session.IdWithinThePair                        => test:test_only_an_ack_of_the_id_last_issued_flips_the_pair exercises=kd_expected
+entity-fields.Session                                    => structural
+entity-optional.Session.kernel_base                      => structural
+entity-optional.Session.last_request                     => structural
+entity-fields.Packet                                     => structural
+entity-optional.Packet.api                               => structural
+derived.Packet.is_control                                => test:test_a_control_packet_carries_no_checksum_and_no_payload exercises=CTRL_LEADER
+derived.Packet.is_data                                   => test:test_a_data_packet_carries_the_measured_header_and_trailer exercises=DATA_LEADER
+entity-fields.Reply                                      => structural
+entity-fields.DiscardedRun                               => structural
+entity-fields.ModuleLoad                                 => structural
+entity-fields.BreakCapture                               => structural
+entity-fields.PrintedText                                => structural
+entity-fields.BacklogFlush                               => structural
+entity-fields.FileRefusal                                => structural
+entity-fields.ReadRequest                                => structural
+entity-fields.ReadRefusal                                => structural
+entity-fields.ReadResult                                 => structural
+config-default.data_leader                               => test:test_a_data_packet_carries_the_measured_header_and_trailer exercises=DATA_LEADER
+config-default.control_leader                            => test:test_a_control_packet_carries_no_checksum_and_no_payload exercises=CTRL_LEADER
+config-default.trailer_byte                              => test:test_every_frame_on_the_wire_ends_with_the_trailer exercises=TRAILER
+config-default.header_size                               => test:test_a_frame_is_a_sixteen_byte_header_then_payload_then_trailer exercises=calcsize
+config-default.expected_id_base                          => test:test_only_an_ack_of_the_id_last_issued_flips_the_pair exercises=kd_expected
+config-default.initial_own_id                            => test:test_a_reset_restarts_both_id_counters exercises=INITIAL_PID
+config-default.post_reset_own_id                         => test:test_a_reset_restarts_both_id_counters exercises=POST_RESET_PID
+config-default.checksum_bits                             => test:test_the_checksum_is_the_full_sum_and_not_a_sixteen_bit_field exercises=send_data
+config-default.max_endpoint_path_length                  => test:test_an_endpoint_too_long_to_bind_is_refused_before_the_boot exercises=MAX_ENDPOINT_PATH
+config-default.max_read_length                           => test:test_a_read_is_clamped_to_the_length_the_engine_answers exercises=MAXRD
+config-default.exchange_state_change                     => test:test_a_module_load_is_answered_with_a_resume_not_a_version_request exercises=T_STATE_CHANGE64
+config-default.exchange_ack                              => test:test_a_reply_carries_the_id_of_the_packet_it_answers exercises=T_ACK
+config-default.exchange_resend                           => test:test_a_refusal_retransmits_the_same_packet_under_the_same_id exercises=T_RESEND
+config-default.exchange_reset                            => test:test_a_reset_restarts_both_id_counters exercises=T_RESET
+config-default.state_load_symbols                        => test:test_a_module_load_is_recorded_with_its_base_and_name exercises=STATE_LOAD_SYMBOLS
+config-default.api_continue                              => test:test_a_module_load_is_answered_with_a_resume_not_a_version_request exercises=API_CONTINUE2
+config-default.api_read                                  => test:test_a_read_reply_reports_what_arrived_and_clears_what_was_asked exercises=API_READ_VM
+config-default.api_read_physical                         => test:test_the_collector_forwards_a_read_it_was_asked_for_and_the_reader_owns_the_clamp exercises=API_READ_PHYS
+config-default.continue_action                           => test:test_a_module_load_is_answered_with_a_resume_not_a_version_request exercises=DBG_CONTINUE
+config-default.file_open_status                          => test:test_a_file_open_is_declined_with_the_documented_status exercises=FILE_OPEN_DECLINE
+rule-success.RefuseAnUnusableEndpoint                    => test:test_an_endpoint_too_long_to_bind_is_refused_before_the_boot exercises=MAX_ENDPOINT_PATH
+rule-failure.RefuseAnUnusableEndpoint.1                  => test:test_an_endpoint_too_long_to_bind_is_refused_before_the_boot exercises=MAX_ENDPOINT_PATH
+rule-entity-creation.RefuseAnUnusableEndpoint.1          => test:test_an_endpoint_too_long_to_bind_is_refused_before_the_boot exercises=MAX_ENDPOINT_PATH
+rule-success.OpenTheLink                                 => test:test_a_closed_link_is_reported_as_lost_and_redialled exercises=connect_wait
+rule-failure.OpenTheLink.1                               => test:test_a_closed_link_is_reported_as_lost_and_redialled exercises=connect_wait
+rule-failure.OpenTheLink.2                               => test:test_a_closed_link_is_reported_as_lost_and_redialled exercises=connect_wait
+rule-success.RedialAfterALostLink                        => test:test_a_closed_link_is_reported_as_lost_and_redialled exercises=connect_wait
+rule-failure.RedialAfterALostLink.1                      => test:test_a_closed_link_is_reported_as_lost_and_redialled exercises=connect_wait
+rule-failure.RedialAfterALostLink.2                      => test:test_a_closed_link_is_reported_as_lost_and_redialled exercises=connect_wait
+rule-success.LoseTheLink                                 => test:test_a_closed_link_is_reported_as_lost_and_redialled exercises=link lost
+rule-failure.LoseTheLink.1                               => test:test_a_closed_link_is_reported_as_lost_and_redialled exercises=link lost
+rule-success.DiscardUntilAKnownLeader                    => test:test_bytes_before_a_leader_are_stepped_over exercises=read_packet
+rule-failure.DiscardUntilAKnownLeader.1                  => test:test_bytes_before_a_leader_are_stepped_over exercises=read_packet
+rule-entity-creation.DiscardUntilAKnownLeader.1          => test:test_bytes_before_a_leader_are_stepped_over exercises=read_packet
+rule-success.FrameThePacket                              => test:test_a_frame_is_a_sixteen_byte_header_then_payload_then_trailer exercises=read_packet
+rule-failure.FrameThePacket.1                            => test:test_a_frame_is_a_sixteen_byte_header_then_payload_then_trailer exercises=read_packet
+rule-entity-creation.FrameThePacket.1                    => test:test_a_frame_is_a_sixteen_byte_header_then_payload_then_trailer exercises=read_packet
+rule-success.ContinueAfterAModuleLoad                    => test:test_a_module_load_is_answered_with_a_resume_not_a_version_request exercises=API_CONTINUE2
+rule-failure.ContinueAfterAModuleLoad.1                  => test:test_a_module_load_is_answered_with_a_resume_not_a_version_request exercises=API_CONTINUE2
+rule-entity-creation.ContinueAfterAModuleLoad.1          => test:test_a_reply_carries_the_id_of_the_packet_it_answers exercises=send_control
+rule-entity-creation.ContinueAfterAModuleLoad.2          => test:test_a_module_load_is_answered_with_a_resume_not_a_version_request exercises=API_CONTINUE2
+rule-entity-creation.ContinueAfterAModuleLoad.3          => test:test_a_module_load_is_recorded_with_its_base_and_name exercises=parse_module_name
+rule-success.NoteTheKernelBase                           => test:test_the_first_kernel_load_sets_the_base_later_breaks_are_measured_against exercises=ntbase
+rule-failure.NoteTheKernelBase.1                         => test:test_the_first_kernel_load_sets_the_base_later_breaks_are_measured_against exercises=ntbase
+rule-failure.NoteTheKernelBase.2                         => test:test_the_first_kernel_load_sets_the_base_later_breaks_are_measured_against exercises=ntbase
+rule-success.HoldTheMachineOnAnUnmodelledBreak           => test:test_an_unmodelled_state_change_holds_the_machine_and_still_acks exercises=captor_catch
+rule-failure.HoldTheMachineOnAnUnmodelledBreak.1         => test:test_an_unmodelled_state_change_holds_the_machine_and_still_acks exercises=captor_catch
+rule-entity-creation.HoldTheMachineOnAnUnmodelledBreak.1 => test:test_an_unmodelled_state_change_holds_the_machine_and_still_acks exercises=T_ACK
+rule-entity-creation.HoldTheMachineOnAnUnmodelledBreak.2 => test:test_an_unmodelled_state_change_holds_the_machine_and_still_acks exercises=captor_catch
+rule-entity-creation.HoldTheMachineOnAnUnmodelledBreak.3 => test:test_an_unmodelled_state_change_holds_the_machine_and_still_acks exercises=stale socket chunks flushed
+rule-success.ReleaseTheHold                              => test:test_an_unmodelled_state_change_holds_the_machine_and_still_acks exercises=HOLD_RELEASE
+rule-failure.ReleaseTheHold.1                            => test:test_an_unmodelled_state_change_holds_the_machine_and_still_acks exercises=HOLD_RELEASE
+rule-entity-creation.ReleaseTheHold.1                    => test:test_an_unmodelled_state_change_holds_the_machine_and_still_acks exercises=HOLD_RELEASE
+rule-success.RefuseAReadPastTheEngineLimit               => test:test_the_collector_forwards_a_read_it_was_asked_for_and_the_reader_owns_the_clamp exercises=MAXRD
+rule-failure.RefuseAReadPastTheEngineLimit.1             => test:test_the_collector_forwards_a_read_it_was_asked_for_and_the_reader_owns_the_clamp exercises=MAXRD
+rule-entity-creation.RefuseAReadPastTheEngineLimit.1     => test:test_the_collector_forwards_a_read_it_was_asked_for_and_the_reader_owns_the_clamp exercises=MAXRD
+rule-success.AskForTheRead                               => test:test_a_read_reply_reports_what_arrived_and_clears_what_was_asked exercises=read-dump
+rule-failure.AskForTheRead.1                             => test:test_a_read_reply_reports_what_arrived_and_clears_what_was_asked exercises=read-dump
+rule-failure.AskForTheRead.2                             => test:test_a_read_reply_reports_what_arrived_and_clears_what_was_asked exercises=read-dump
+rule-entity-creation.AskForTheRead.1                     => test:test_a_read_reply_reports_what_arrived_and_clears_what_was_asked exercises=read-dump
+rule-success.IssueOnTheExpectedId                        => test:test_issuing_requests_never_advances_the_id exercises=kd_expected
+rule-failure.IssueOnTheExpectedId.1                      => test:test_issuing_requests_never_advances_the_id exercises=kd_expected
+rule-entity-creation.IssueOnTheExpectedId.1              => test:test_issuing_requests_never_advances_the_id exercises=kd_expected
+rule-success.FlipOnlyOnAnAcceptedId                      => test:test_only_an_ack_of_the_id_last_issued_flips_the_pair exercises=last_sent_id
+rule-failure.FlipOnlyOnAnAcceptedId.1                    => test:test_only_an_ack_of_the_id_last_issued_flips_the_pair exercises=last_sent_id
+rule-failure.FlipOnlyOnAnAcceptedId.2                    => test:test_only_an_ack_of_the_id_last_issued_flips_the_pair exercises=last_sent_id
+rule-success.RepeatTheIdOnARefusal                       => test:test_a_refusal_retransmits_the_same_packet_under_the_same_id exercises=last_tx
+rule-failure.RepeatTheIdOnARefusal.1                     => test:test_a_refusal_retransmits_the_same_packet_under_the_same_id exercises=last_tx
+rule-failure.RepeatTheIdOnARefusal.2                     => test:test_a_refusal_retransmits_the_same_packet_under_the_same_id exercises=last_tx
+rule-entity-creation.RepeatTheIdOnARefusal.1             => test:test_a_refusal_retransmits_the_same_packet_under_the_same_id exercises=last_tx
+rule-success.RestartBothIdsOnAReset                      => test:test_a_reset_restarts_both_id_counters exercises=POST_RESET_PID
+rule-failure.RestartBothIdsOnAReset.1                    => test:test_a_reset_restarts_both_id_counters exercises=POST_RESET_PID
+rule-entity-creation.RestartBothIdsOnAReset.1            => test:test_a_reset_restarts_both_id_counters exercises=POST_RESET_PID
+rule-success.DeclineAFileOpen                            => test:test_a_file_open_is_declined_with_the_documented_status exercises=FILE_OPEN_DECLINE
+rule-failure.DeclineAFileOpen.1                          => test:test_a_file_open_is_declined_with_the_documented_status exercises=FILE_OPEN_DECLINE
+rule-entity-creation.DeclineAFileOpen.1                  => test:test_a_file_open_is_declined_with_the_documented_status exercises=FILE_OPEN_DECLINE
+rule-entity-creation.DeclineAFileOpen.2                  => test:test_a_file_open_is_declined_with_the_documented_status exercises=FILE_OPEN_DECLINE
+rule-entity-creation.DeclineAFileOpen.3                  => test:test_a_file_open_is_declined_with_the_documented_status exercises=FILE_OPEN_DECLINE
+rule-success.RecordPrintedText                           => test:test_printed_driver_text_is_captured_and_answered exercises=PRINT
+rule-failure.RecordPrintedText.1                         => test:test_printed_driver_text_is_captured_and_answered exercises=PRINT
+rule-entity-creation.RecordPrintedText.1                 => test:test_printed_driver_text_is_captured_and_answered exercises=PRINT
+rule-entity-creation.RecordPrintedText.2                 => test:test_printed_driver_text_is_captured_and_answered exercises=PRINT
+rule-success.DeliverTheReadResult                        => test:test_a_read_reply_reports_what_arrived_and_clears_what_was_asked exercises=read-dump
+rule-failure.DeliverTheReadResult.1                      => test:test_a_read_reply_reports_what_arrived_and_clears_what_was_asked exercises=read-dump
+rule-failure.DeliverTheReadResult.2                      => test:test_a_read_reply_reports_what_arrived_and_clears_what_was_asked exercises=read-dump
+rule-entity-creation.DeliverTheReadResult.1              => test:test_a_read_reply_reports_what_arrived_and_clears_what_was_asked exercises=read-dump
+rule-entity-creation.DeliverTheReadResult.2              => test:test_a_read_reply_reports_what_arrived_and_clears_what_was_asked exercises=read-dump
+rule-success.AcknowledgeAManipulateReply                 => test:test_an_unrequested_reply_is_still_answered exercises=T_MANIPULATE
+rule-failure.AcknowledgeAManipulateReply.1               => test:test_an_unrequested_reply_is_still_answered exercises=T_MANIPULATE
+rule-failure.AcknowledgeAManipulateReply.2               => test:test_an_unrequested_reply_is_still_answered exercises=T_MANIPULATE
+rule-entity-creation.AcknowledgeAManipulateReply.1       => test:test_an_unrequested_reply_is_still_answered exercises=T_MANIPULATE
+rule-success.AcknowledgeAnUnmodelledExchange             => test:test_an_exchange_this_spec_does_not_model_is_still_answered exercises=T_ACK
+rule-failure.AcknowledgeAnUnmodelledExchange.1           => test:test_an_exchange_this_spec_does_not_model_is_still_answered exercises=T_ACK
+rule-entity-creation.AcknowledgeAnUnmodelledExchange.1   => test:test_an_exchange_this_spec_does_not_model_is_still_answered exercises=T_ACK
+invariant.ChecksumIsTheFullSum                           => test:test_the_checksum_is_the_full_sum_and_not_a_sixteen_bit_field exercises=send_data
+invariant.ControlPacketsCarryNoChecksum                  => test:test_a_control_packet_carries_no_checksum_and_no_payload exercises=send_control
+invariant.TrailerEndsEveryPacket                         => test:test_every_frame_on_the_wire_ends_with_the_trailer exercises=TRAILER
+invariant.SentPayloadLengthIsTheByteCount                => test:test_a_data_packet_carries_the_measured_header_and_trailer exercises=send_data
+invariant.ReplyCarriesTheAnsweredId                      => test:test_a_reply_carries_the_id_of_the_packet_it_answers exercises=send_control
+invariant.SentIdIsExpectedOrLastIssued                   => test:test_issuing_requests_never_advances_the_id exercises=kd_expected
+invariant.ReadWithinTheEngineLimit                       => test:test_a_read_is_clamped_to_the_length_the_engine_answers exercises=MAXRD
+invariant.ReadIsNotEmpty                                 => test:test_a_zero_length_read_is_never_issued exercises=read_block
+invariant.ResultNoLongerThanRequested                    => test:test_a_read_reply_reports_what_arrived_and_clears_what_was_asked exercises=read-dump
+invariant.HighestBaseOwnsTheAddress                      => test:test_the_owner_of_an_address_is_the_highest_base_not_above_it exercises=resolve_addr
+invariant.OffsetIsFromTheOwner                           => test:test_a_captor_catch_is_written_even_when_the_module_is_unknown exercises=captor_catch
+invariant.BacklogDropsNothingNegativeAndParsesOnlyFresh  => test:test_an_unmodelled_state_change_holds_the_machine_and_still_acks exercises=stale socket chunks flushed
+surface-actor.Collector                                  => structural
+surface-provides.Collector                               => test:test_a_closed_link_is_reported_as_lost_and_redialled exercises=connect_wait

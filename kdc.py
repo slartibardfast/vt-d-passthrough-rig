@@ -32,11 +32,13 @@ RIG  = os.path.dirname(os.path.abspath(__file__))
 # overridable because a fixed socket makes a stale collector race a fresh one for the guest, and a
 # log in the rig root blends the runs together.
 SOCK = os.environ.get("KD_SOCK", "/tmp/opencode/kd.sock")
-if len(SOCK) > 100:
+MAX_ENDPOINT_PATH = 100              # refused here, at a margin under the kernel's 108-byte cap
+if len(SOCK) > MAX_ENDPOINT_PATH:
     # QEMU refuses the same path at parse time, so a long name has to be named here too rather than
-    # surfacing as an OSError from the first connect in the loop.
-    raise SystemExit("kdc.py: KD_SOCK is %d bytes and the kernel caps AF_UNIX paths at 108: %s"
-                     % (len(SOCK), SOCK))
+    # surfacing as an OSError from the first connect in the loop. The margin under the kernel's cap
+    # is deliberate: the bound a reader needs is the one this program actually enforces.
+    raise SystemExit("kdc.py: KD_SOCK is %d bytes, over this rig's limit of %d, and the kernel caps "
+                     "AF_UNIX paths at 108: %s" % (len(SOCK), MAX_ENDPOINT_PATH, SOCK))
 LOG  = os.environ.get("KDC_LOG", os.path.join(RIG, "kdc-live.log"))
 HOLD_RELEASE = os.path.join(RIG, "hold-release")
 
@@ -45,6 +47,7 @@ CTRL_LEADER  = 0x69696969
 INITIAL_PID  = 0x80800800
 POST_RESET_PID = 0x80800000          # measured: the target's id base after a reset
 BREAKIN      = b"\x62\x62\x62\x62"   # debugger says hello; target answers with a state change
+FILE_OPEN_DECLINE = 0xC0000001       # the documented refusal: the kernel keeps its own copy
 
 T_MANIPULATE, T_ACK, T_RESEND, T_RESET, T_STATE_CHANGE64 = 2, 4, 5, 6, 7
 STATE_LOAD_SYMBOLS = 0x00003031      # measured from ptyrelay.log packet #0
@@ -322,7 +325,7 @@ def handle(kd, ptype, bcount, pid, cksum, data):
         log("FILE_IO api=%#x %s" % (api, name))
         kd.send_control(T_ACK, pid)
         if api == 0x3430:  # CreateFile: decline - the kernel uses its local copy
-            kd.send_data(11, struct.pack("<II", 0x3430, 0xC0000001) + b"\x00" * 56,
+            kd.send_data(11, struct.pack("<II", 0x3430, FILE_OPEN_DECLINE) + b"\x00" * 56,
                          kd.my_pid)
     else:
         log("RX type=%d len=%d pid=%#x hdr=%s" % (ptype, len(data), pid, getattr(kd, "last_hdr", "?")))

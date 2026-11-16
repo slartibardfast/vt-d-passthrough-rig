@@ -31,7 +31,12 @@ def kd_read(addr, n):
 
 _last_ret = [None]
 
-def _wait_read(mark, timeout=10):
+def _wait_read(mark, timeout=12):
+    # Two definitions of this function existed, and the second silently replaced the first:
+    # the one that survived did not record the engine's return status, so kd_read's rule that
+    # an answered error is definitive never fired and every refused read was retried anyway.
+    # The longer timeout is the one the campaign ran on, so it stays.
+
     deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(0.3)
@@ -65,25 +70,6 @@ def read_block(addr, total):
         out += data
         a += len(data)
     return bytes(out), total
-
-def _wait_read(mark, timeout=12):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        time.sleep(0.4)
-        data = open(LOG, "rb").read()
-        fresh = data[mark:].decode("ascii", "replace")
-        if "READ ret=" in fresh:
-            out = bytearray()
-            actual = 0
-            for line in fresh.splitlines():
-                m = re.match(r"\[\S+\]\s+READ ret=(\S+) actual=(\S+)", line.strip())
-                if m: actual = int(m.group(2), 0)
-                m = re.match(r"\[\S+\]\s+([0-9a-f]{4})  ((?:[0-9a-f]{2} )+)", line.strip())
-                if m:
-                    for b in m.group(2).split():
-                        out.append(int(b, 16))
-            return bytes(out[:actual]), actual
-    return None, 0
 
 if __name__ == "__main__":
     addr = int(sys.argv[1], 16)
