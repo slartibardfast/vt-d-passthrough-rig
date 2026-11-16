@@ -181,25 +181,41 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
+# Where a user-mode display driver must sit. The registry names a module by name, and win32k
+# resolves that name against system32, so a selection with no file there is a name pointing at
+# nothing. The casing of the directory on disk is whatever the volume stores; find() settles it.
+SYSTEM32 = "WINDOWS/system32"
+DLLCACHE = "WINDOWS/system32/dllcache"
+DLL_NAME_RE = re.compile(r"[A-Za-z0-9_]+\.(dll|DLL)")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--image", required=True, type=Path)
     ap.add_argument("--bootlog", action="store_true")
     ap.add_argument("--startup-hook", type=Path, default=None)
     ap.add_argument("--runid", default=None)
+    ap.add_argument("--display-dll", type=Path, default=None,
+                    help="copy a driver's user-mode DLL into system32, the file the registry names "
+                         "and no install step ever placed")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--record", type=Path, default=None)
     a = ap.parse_args()
     if not a.image.is_file():
         raise Bad("no such image: %s" % a.image)
-    actions = [x for x in (a.bootlog, a.startup_hook, a.runid) if x]
+    actions = [x for x in (a.bootlog, a.startup_hook, a.runid, a.display_dll) if x]
     if not actions:
         # A bare --check would report nothing at all and exit 0, which reads as a clean answer to a
         # question nobody asked. Naming the setting is the question.
-        raise Bad("say which setting: --bootlog, --startup-hook <file>, or --runid <text> "
-                  "(add --check to read it back without writing)")
+        raise Bad("say which setting: --bootlog, --startup-hook <file>, --runid <text>, or "
+                  "--display-dll <file> (add --check to read it back without writing)")
     if a.startup_hook and not a.startup_hook.is_file():
         raise Bad("no such startup hook template: %s" % a.startup_hook)
+    if a.display_dll:
+        if not a.display_dll.is_file():
+            raise Bad("no such display DLL to install: %s" % a.display_dll)
+        if not DLL_NAME_RE.fullmatch(a.display_dll.name):
+            raise Bad("the display DLL must be named like a driver DLL, got %s" % a.display_dll.name)
     if a.runid and not re.fullmatch(r"[A-Za-z0-9._-]{4,64}", a.runid):
         raise Bad("the run id must be a plain token of letters, digits, dot, dash or underscore")
     a_quiet_host()
@@ -288,6 +304,42 @@ def main():
                 expected["runid"] = ("eq", data, None)
             else:
                 print("already set runid: %s" % a.runid)
+
+        if a.display_dll:
+            want = sha(a.display_dll.read_bytes())
+            system32 = find(MOUNT, SYSTEM32)
+            if system32 is None:
+                raise Bad("no %s on the volume, so the display DLL has nowhere to go and a name in "
+                          "the registry resolves to nothing" % SYSTEM32)
+            dest = system32 / a.display_dll.name
+            have = sha(read(dest)) if dest.exists() else None
+            if a.check:
+                print("display-dll %s is %s" % (a.display_dll.name,
+                                                "present (%s)" % have[:12] if have == want else
+                                                ("absent" if have is None else
+                                                 "present but %s, not %s" % (have[:12], want[:12]))))
+                if have != want:
+                    missing.append("display-dll")
+            elif have == want:
+                print("already set display-dll: %s (%s)" % (a.display_dll.name, want[:12]))
+            else:
+                if have is not None:
+                    record(a.record, "%s.before" % a.display_dll.name, read(dest))
+                # The bytes go through cp, not the text-mode write() helper. A PE image is not a
+                # latin-1 string, and a copy that round-trips it through a decoder produces a file
+                # that is the right size and wrong in every byte, which a boot reports as a bad driver.
+                sh("sudo", "cp", str(a.display_dll), str(dest))
+                sh("sudo", "chmod", "755", str(dest), check=False)
+                sh("sync")
+                cache = find(MOUNT, DLLCACHE)
+                if cache is not None and not (cache / a.display_dll.name).exists():
+                    sh("sudo", "cp", str(a.display_dll), str(cache / a.display_dll.name))
+                    sh("sudo", "chmod", "755", str(cache / a.display_dll.name), check=False)
+                    print("also placed a copy in dllcache, so Windows File Protection has the same "
+                          "bytes to restore from")
+                print("set display-dll: %s (%s, %d bytes)"
+                      % (a.display_dll.name, want[:12], a.display_dll.stat().st_size))
+                expected["display-dll"] = ("sha", want, a.display_dll.name)
         umount()
         if a.check:
             if missing:
@@ -318,6 +370,17 @@ def main():
                 else:
                     print("read back startup-hook: %s" % have[:12])
                     record(a.record, "letters.bat.after", read(find(MOUNT, HOOK_TARGET)))
+            elif name == "display-dll":
+                placed = find(MOUNT, "%s/%s" % (SYSTEM32, context))
+                if placed is None:
+                    bad.append("the display DLL is not on the volume after the copy")
+                else:
+                    have = sha(read(placed))
+                    if have != want:
+                        bad.append("system32 holds %s, not the copied file's %s"
+                                   % (have[:12], want[:12]))
+                    else:
+                        print("read back display-dll: %s (%s)" % (placed.name, have[:12]))
             elif name == "runid":
                 rp = find(MOUNT, RUNID_FILE)
                 if rp is None:

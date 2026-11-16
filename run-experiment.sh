@@ -27,6 +27,7 @@
 #
 # Usage: run-experiment.sh --golden <qcow2> --channel <img> --name NAME
 #                          [--runs DIR] [--timeout SECONDS] [--hold SECONDS] [--no-bootlog]
+#                          [--display-dll FILE] [--dest DIR] [--force]
 #                          [--prepare-only] [--dry-run]
 #        run-experiment.sh --list-evidence <mounted-system-volume>
 #
@@ -37,11 +38,18 @@
 # monitor (system_powerdown, an ACPI request, not a reset), and then waits for QEMU to exit
 # on its own so the writeback cache and the hive logs land clean. --no-bootlog skips the
 # loader flag; it exists for a synthetic image with no system volume, not for a real run.
+#
+# --display-dll installs one user-mode DLL into the overlay's system32. The registry has named
+# `ati2dvag` as the display driver for every boot of this campaign, and the file has never been on the
+# OS volume, so win32k opens the path, fails, and takes `vga.dll` instead. A run that is meant to
+# settle the display question has to put the file there first, and it has to say so in its own record.
+# The copy goes into the overlay and never into the golden, so the write stays disposable and every
+# earlier run's cited `golden_sha256` keeps resolving.
 set -uo pipefail
 
 RIG=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 GOLDEN="" CHANNEL="" NAME="" RUNS="$RIG/work/runs" TIMEOUT=600 PREPARE="" DRY="" TREE=""
-HOLD=240 NO_BOOTLOG="" DEST="" FORCE=""
+HOLD=240 NO_BOOTLOG="" DEST="" FORCE="" DISPLAY_DLL=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -53,6 +61,7 @@ while [ $# -gt 0 ]; do
     --hold) HOLD=${2:-}; shift 2;;
     --dest) DEST=${2:-}; shift 2;;
     --force) FORCE=1; shift;;
+    --display-dll) DISPLAY_DLL=${2:-}; shift 2;;
     --no-bootlog) NO_BOOTLOG=1; shift;;
     --prepare-only) PREPARE=1; shift;;
     --dry-run) DRY=1; shift;;
@@ -127,6 +136,11 @@ NONCE="$NAME-$STAMP"
 # there. The nonce is not changed by it: the run still signs its captures with name-and-stamp, so
 # two boots into one directory can never be confused for one another, and a second boot is refused
 # until the record it would overwrite is deliberately replaced.
+if [ -n "$DISPLAY_DLL" ]; then
+  case "$DISPLAY_DLL" in /*) ;; *) DISPLAY_DLL="$RIG/$DISPLAY_DLL";; esac
+  test -f "$DISPLAY_DLL" || { printf 'no display DLL to install at %s\n' "$DISPLAY_DLL" >&2; exit 2; }
+fi
+
 if [ -n "$DEST" ]; then
   RUN="$DEST"
   case "$RUN" in
@@ -262,6 +276,8 @@ PRINT_ONLY=1 WORK="$OVERLAY" CHANNEL="$RUN_CHANNEL" FORMAT=qcow2 CACHE=writeback
 
 if [ -n "$DRY" ]; then
   printf 'plan: the overlay is given /bootlog, the Startup trigger, and the nonce, unless --no-bootlog\n'
+  [ -z "$DISPLAY_DLL" ] || printf 'plan: the overlay is given %s in system32\n' \
+    "$(basename "$DISPLAY_DLL")"
   printf 'plan: the run is held %ss, then closed through the monitor, so the hives flush\n' "$HOLD"
   printf 'plan: evidence is read back from a read-only nbd attachment with its timestamps\n'
   printf 'dry run: prepared and planned, and no QEMU was started\n'
@@ -272,18 +288,28 @@ if [ -n "$PREPARE" ]; then
   exit 0
 fi
 
-if [ -z "$NO_BOOTLOG" ]; then
+if [ -z "$NO_BOOTLOG" ] || [ -n "$DISPLAY_DLL" ]; then
   # Three settings, one image, one proof pass. The loader flag makes ntbtlog.txt exist; the trigger
   # is what the guest runs at logon to answer the questions no offline read can ask; and the nonce
   # is what lets the grader tell a file this run wrote from a file the golden handed over. Those
   # last two were the whole of one failed control: the golden carried a November-14 trigger, so the
   # captures L graded were inherited or missing, and nothing could say which.
-  printf 'setting: the overlay gets /bootlog, the Startup trigger, and the nonce\n'
-  "$RIG/golden-settings.py" --image "$OVERLAY" --bootlog \
-    --startup-hook "$RIG/install-channel/startup-hook.bat" --runid "$NONCE" --record "$RUN" || {
+  SETTINGS=(--image "$OVERLAY" --record "$RUN")
+  if [ -z "$NO_BOOTLOG" ]; then
+    SETTINGS+=(--bootlog --startup-hook "$RIG/install-channel/startup-hook.bat" --runid "$NONCE")
+  fi
+  [ -z "$DISPLAY_DLL" ] || SETTINGS+=(--display-dll "$DISPLAY_DLL")
+  printf 'setting: the overlay is configured by golden-settings.py, which proves each setting from a second mount\n'
+  "$RIG/golden-settings.py" "${SETTINGS[@]}" || {
       printf 'the overlay could not be configured; refusing to boot a run that records nothing\n' >&2
       exit 2; }
-  amend "startup_hook_sha256=$(sha256sum "$RIG/install-channel/startup-hook.bat" | cut -d' ' -f1)"
+  if [ -z "$NO_BOOTLOG" ]; then
+    amend "startup_hook_sha256=$(sha256sum "$RIG/install-channel/startup-hook.bat" | cut -d' ' -f1)"
+  fi
+  if [ -n "$DISPLAY_DLL" ]; then
+    amend "display_dll=$(basename "$DISPLAY_DLL")" \
+      "display_dll_sha256=$(sha256sum "$DISPLAY_DLL" | cut -d' ' -f1)"
+  fi
 fi
 
 KD_SOCK="$KD_SOCK" SEABIOS_LOG="$SEABIOS_LOG" KDC_LOG="$RUN/kdc-live.log" \

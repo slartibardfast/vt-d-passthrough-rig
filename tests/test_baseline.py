@@ -355,9 +355,17 @@ def test_a_missing_tool_is_still_one_line(tmp_path):
 
 def test_the_runner_configures_the_overlay_and_leaves_no_shared_state_behind():
     src = (ROOT / "run-experiment.sh").read_text()
-    assert '--image "$OVERLAY" --bootlog' in src, "the flag must go on the image that boots"
+    # The settings are assembled into one array now, because a run may also be asked to install a
+    # display DLL, and a second invocation line would be a second thing to keep honest. What the
+    # assertion protects is unchanged: the settings land on the image that boots, the overlay.
+    assert 'SETTINGS=(--image "$OVERLAY"' in src, "the settings must go on the image that boots"
+    assert "SETTINGS+=(--bootlog" in src, "the loader flag is a per-run setting"
     assert "--startup-hook" in src and '--runid "$NONCE"' in src, \
         "the trigger and the nonce are per-run inputs, not baked state"
+    assert 'SETTINGS+=(--display-dll "$DISPLAY_DLL")' in src, \
+        "a run that installs a file into the overlay has to say which file"
+    assert "display_dll_sha256=" in src, \
+        "the bytes that were installed belong in the run record, or a later reader cannot tell"
     assert "refusing to boot a run that records nothing" in src
     assert 'LOGDIR="$RUN"' in src, "a KD log outside the run directory belongs to no run"
     assert 'KD_SOCK="/tmp/opencode/kd-$NONCE.sock"' in src, \
