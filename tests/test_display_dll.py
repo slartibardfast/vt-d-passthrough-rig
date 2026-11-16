@@ -12,6 +12,7 @@ as prose and then quietly stops being true.
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -171,3 +172,23 @@ def test_the_campaign_golden_does_not_carry_the_display_dll():
         assert system32 is not None, "the golden has no system32, so it is not the volume assumed"
         present = sorted(c.name for c in Path(system32).iterdir() if c.name.lower() == "ati2dvag.dll")
         assert present == [], "the golden carries the display DLL, so the campaign's account is stale"
+
+def test_a_volume_that_is_not_an_image_is_still_refused_after_the_wait(tmp_path):
+    """A file that is readable and still wrong has to be refused, and refused with a remedy.
+
+    The wait exists because releasing an nbd device is asynchronous, so the guard had to keep failing on
+    the genuinely bad case. It turned out the weaker bug was next door: `qemu-img info` reports a junk
+    file as `raw`, which passed the old `"format"` presence check and then died inside `qemu-nbd` with a
+    message about formats and no remedy. Naming the format is what makes the answer actionable.
+    """
+    fake = tmp_path / "not-an-image.qcow2"
+    fake.write_bytes(b"just bytes, and no qcow2 header anywhere")
+    env = dict(os.environ, GOLDEN_SETTINGS_ATTACH_TRIES="2")
+    r = subprocess.run([sys.executable, str(ROOT / "golden-settings.py"), "--image", str(fake),
+                        "--bootlog"], capture_output=True, text=True, cwd=str(ROOT), env=env)
+    assert r.returncode == 2, r.stdout + r.stderr
+    combined = r.stdout + r.stderr
+    assert "Traceback" not in combined, combined
+    assert ("is a raw image" in combined and "qemu-img convert -O qcow2" in combined) \
+        or ("cannot read" in combined and "2 tries" in combined), combined
+

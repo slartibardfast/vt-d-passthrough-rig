@@ -24,6 +24,7 @@ Usage: golden-settings.py --image <qcow2> [--bootlog] [--startup-hook <file>] [-
 """
 import argparse
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -74,10 +75,36 @@ def first_partition():
 
 
 def attach(image):
-    out = subprocess.run(["qemu-img", "info", "--output=json", str(image)],
-                         capture_output=True, text=True).stdout
-    if '"format"' not in out:
-        raise Bad("qemu-img cannot read %s" % image)
+    # The retry count is an environment knob for one reason: a test has to reach the refusal without
+    # waiting ten seconds for it. The default is what a real run uses.
+
+    # `qemu-nbd -d` returns before the kernel has finished releasing the device, so the next
+    # `qemu-img info` on the same file can fail for a few hundred milliseconds. The first time that
+    # showed up was in a lane, on a check that ran immediately after a write, where it surfaced as
+    # "qemu-img cannot read". Waiting is correct here and a bounded wait still fails loudly on an
+    # image that is genuinely unreadable.
+    tries = int(os.environ.get("GOLDEN_SETTINGS_ATTACH_TRIES", "40"))
+    for attempt in range(tries):
+        r = subprocess.run(["qemu-img", "info", "--output=json", str(image)],
+                           capture_output=True, text=True)
+        try:
+            facts = json.loads(r.stdout)
+        except json.JSONDecodeError:
+            facts = None
+        if facts and "format" in facts:
+            break
+        if attempt == 0:
+            first = (r.stderr or r.stdout).strip()[:160]
+        time.sleep(0.25)
+    else:
+        raise Bad("qemu-img cannot read %s after %d tries; the first error said: %s"
+                  % (image, tries, first or "no output"))
+    # A raw volume reads perfectly well and then fails inside qemu-nbd with a message about formats, so
+    # the format is named here, where the remedy is knowable: an overlay has to back onto a qcow2.
+    if facts["format"] != "qcow2":
+        raise Bad("%s is a %s image, and a qcow2 overlay cannot back onto one; convert it with "
+                  "`qemu-img convert -O qcow2 %s %s.qcow2`"
+                  % (image, facts["format"], image, image))
     sh("sudo", "modprobe", "nbd", "max_part=8")
     if Path(NBD).exists():
         holders = sh("sudo", "fuser", "-v", NBD, check=False)
