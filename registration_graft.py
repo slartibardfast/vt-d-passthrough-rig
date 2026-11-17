@@ -509,8 +509,17 @@ def classnode_writes(src, binding, class_key, settings=None):
             raise Bad(f"the INF's [{SETTINGS_SECTION}] chain carries no {name}, so the class node "
                       f"cannot be completed from {binding['InfPath']}")
         typ, value, provenance = settings[name]
-        writes.append((f"{src['control_set']}\\Control\\Class\\{DISPLAY_CLASS}\\{class_key}",
-                       name, typ, value, f"read from the INF's {name} line at {provenance}"))
+        cls_path = f"{src['control_set']}\\Control\\Class\\{DISPLAY_CLASS}\\{class_key}"
+        writes.append((cls_path, name, typ, value,
+                       f"read from the INF's {name} line at {provenance}"))
+    # `Settings` is the install-time snapshot the per-adapter key is seeded from, so a fresh node
+    # without it seeds nothing and the runtime falls back to the driver the old node named. The
+    # project measured that law on the graft path and never applied it here, which is one reason a
+    # complete-looking node can still change nothing.
+    for name in ("InstalledDisplayDrivers", "VgaCompatible"):
+        typ, value, provenance = settings[name]
+        writes.append((f"{cls_path}\\Settings", name, typ, value,
+                       f"the same value in the install-time snapshot, from {provenance}"))
     return writes
 
 

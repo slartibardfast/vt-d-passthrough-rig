@@ -233,6 +233,9 @@ def main():
                     help="the mode the attached display opens its desktop at, for example "
                          "1024x768x32@60; written to the hardware profile, which is where the mode a "
                          "desktop opens at lives")
+    ap.add_argument("--class-key", default=None, metavar="NNNN",
+                    help="the Display class subkey to write; without it the binding goes to a fresh "
+                         "node, and with it the node the device already uses is rewritten in place")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--record", type=Path, default=None)
     a = ap.parse_args()
@@ -386,6 +389,10 @@ def main():
                           "report success while changing nothing" % SYSTEM_HIVE)
             grade = [sys.executable, str(RIG / "registration_graft.py"), "classnode", str(hive),
                      "--inf", str(a.class_binding)]
+            if a.class_key:
+                if not (a.class_key.isdigit() and len(a.class_key) == 4):
+                    raise Bad("--class-key must be four digits, for example 0001")
+                grade += ["--class-key", a.class_key]
             if a.check:
                 r = subprocess.run([str(c) for c in ["sudo"] + grade + ["--check"]],
                                    capture_output=True, text=True)
@@ -473,9 +480,11 @@ def main():
                         print("read back display-dll: %s (%s)" % (placed.name, have[:12]))
             elif name == "class-binding":
                 hive = find(MOUNT, SYSTEM_HIVE)
-                r = subprocess.run([str(c) for c in ["sudo", sys.executable,
-                                                     str(RIG / "registration_graft.py"), "classnode",
-                                                     str(hive), "--inf", want, "--check"]],
+                again = [sys.executable, str(RIG / "registration_graft.py"), "classnode",
+                         str(hive), "--inf", want, "--check"]
+                if a.class_key:
+                    again += ["--class-key", a.class_key]
+                r = subprocess.run([str(c) for c in ["sudo"] + again],
                                    capture_output=True, text=True)
                 tail = [l for l in (r.stdout + r.stderr).splitlines() if "verdict" in l]
                 if r.returncode != 0:
