@@ -9,6 +9,7 @@ because the shape of the inputs is what the tool gets wrong. The one test that r
 its skip.
 """
 
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -110,7 +111,8 @@ def test_the_tool_never_claims_the_monitor_was_observed(tmp_path):
     """The one flag that makes the acceptance an acceptance belongs to a person at the machine."""
     module = build(make_run(tmp_path, with_frame=True))
     assert module["operator_physical_monitor"] is False
-    assert "must not be able to" in module["unevidenced"]["operator_physical_monitor"]
+    assert "must not be able to write one" in module["unevidenced"]["operator_physical_monitor"], \
+        "and the reason names the means: the operator hands over a file, the tool writes none"
     source = TOOL.read_text()
     assert '"operator_physical_monitor": True' not in source, \
         "no path through this tool may set the operator's flag"
@@ -187,3 +189,32 @@ def test_the_boot_that_loaded_the_display_driver_now_fails_on_the_operators_clau
     assert module["driver_loaded"] is True
     assert module["width"] < 1024, "no boot of this card has held a session at the bar's width"
     assert module["operator_physical_monitor"] is False
+
+
+def test_an_operator_attestation_is_carried_with_its_digest_and_its_words(tmp_path):
+    """The operator's half, once they have given it, has to be checkable."""
+
+    run = make_run(tmp_path, with_frame=True)
+    words = tmp_path / "operator-attestation.txt"
+    words.write_text("the KVM feed is the physical monitor for this milestone\n")
+    module = load().build(run, words)
+    assert module["operator_physical_monitor"] is True
+    assert module["operator_attestation"]["sha256"] == hashlib.sha256(
+        words.read_bytes()).hexdigest(), "the record binds the file, so an edit is detectable"
+    assert "KVM feed is the physical monitor" in module["operator_attestation"]["words"]
+    assert "operator_physical_monitor" not in module["unevidenced"], \
+        "a witnessed clause is no longer an open claim"
+
+
+def test_an_attestation_that_is_absent_or_empty_is_refused_rather_than_counted(tmp_path):
+    run = make_run(tmp_path, with_frame=True)
+    module = load()  # one import, so the exception class compared is the one raised
+    missing = tmp_path / "not-written.txt"
+    with pytest.raises(module.Bad) as raised:
+        module.build(run, missing)
+    assert "never to write it here" in str(raised.value), str(raised.value)
+    empty = tmp_path / "empty.txt"
+    empty.write_text("   \n")
+    with pytest.raises(module.Bad) as raised:
+        module.build(run, empty)
+    assert "witnesses nothing" in str(raised.value), str(raised.value)

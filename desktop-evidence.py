@@ -11,10 +11,14 @@ The rule this tool holds itself to is the one the campaign learned the hard way
 (call/0014: a run's evidence is witnessed by the run). It writes only what an instrument recorded,
 and where an instrument is silent it writes the honest negative together with the reason, in
 `unevidenced`, so a later reader sees that the claim was not measured rather than that it was
-measured and failed. It never sets `operator_physical_monitor`: that flag is an observation a person
-makes at the machine, and a tool that could set it would be a tool that could fake the acceptance.
+measured and failed. It never *invents* `operator_physical_monitor`: that flag is an observation a
+person makes, and a tool that could mint one would be a tool that could fake the acceptance. It can
+carry one, through `--operator-attestation FILE`, which reads a file the operator wrote, binds its
+hash into the record, and says in the record that the flag came from that file. The tool writes no
+such file, so the attestation has a provenance a reader can check and the tool has no way to stand in
+for the person.
 
-Usage: desktop-evidence.py --run DIR [--force]
+Usage: desktop-evidence.py --run DIR [--force] [--operator-attestation FILE]
 """
 
 import argparse
@@ -87,7 +91,7 @@ def as_int(value):
         return None
 
 
-def build(run):
+def build(run, attestation=None):
     """The verdict record, with every field traced to the artifact it came from."""
     meta_path = need(run, "run.json")
     meta = json.loads(meta_path.read_text())
@@ -137,8 +141,9 @@ def build(run):
     if not miniport:
         evidence["unevidenced"]["driver_loaded"] = \
             "no MODULE LOAD record for ati2mtag.sys in kdc-detached.log"
-    evidence["unevidenced"]["operator_physical_monitor"] = \
-        "only an observer at the machine can set this, and this tool must not be able to"
+    evidence["unevidenced"]["operator_physical_monitor"] = (
+        "no operator attestation was passed; an operator witnesses the physical monitor and hands "
+        "over the file, and this tool must not be able to write one")
     evidence["unevidenced"]["keyboard_response"] = \
         "this run's captures record that the guest answered its capture scripts, not that a keystroke " \
         "moved anything on screen"
@@ -156,12 +161,33 @@ def build(run):
             % (" (the capture attempts are in %s)" % ", ".join(attempted) if attempted else ""))
     if width is None or height is None:
         evidence["unevidenced"]["resolution"] = "the guest reported no mode at all"
+    if attestation is not None:
+        # The operator's half of the verdict. The file is their writing, this tool only carries it,
+        # and the hash is what binds the record to the words: a record and a file that disagree are
+        # a record that cannot be trusted, which is a check any reader can run in one command.
+        if not attestation.is_file():
+            raise Bad("--operator-attestation %s is not a file; an operator writes it, and the "
+                      "remedy is to ask them for it, never to write it here" % attestation)
+        words = attestation.read_text(errors="replace").strip()
+        if not words:
+            raise Bad("--operator-attestation %s is empty; an empty file witnesses nothing"
+                      % attestation)
+        evidence["operator_physical_monitor"] = True
+        evidence["operator_attestation"] = {
+            "path": str(attestation),
+            "sha256": sha256(attestation),
+            "words": words,
+        }
+        evidence["unevidenced"].pop("operator_physical_monitor", None)
     return evidence
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True, type=Path)
+    ap.add_argument("--operator-attestation", type=Path,
+                    help="a file the operator wrote, witnessing the physical monitor; the tool reads "
+                         "it and never writes it")
     ap.add_argument("--force", action="store_true",
                     help="replace an existing evidence.json; without it, a written record stands")
     a = ap.parse_args()
@@ -171,7 +197,7 @@ def main():
     if out.exists() and not a.force:
         raise Bad("%s already exists; the record a run wrote stands unless --force says otherwise"
                   % out)
-    evidence = build(a.run)
+    evidence = build(a.run, a.operator_attestation)
     out.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
 
     print("wrote %s" % out)
