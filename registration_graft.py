@@ -477,7 +477,10 @@ def free_class_key(h, class_guid):
     raise Bad(f"class {class_guid} has no free four-digit subkey below {len(used) + 2}")
 
 
-def classnode_writes(src, binding, class_key):
+SETTINGS_SECTION = "ati2mtag_SoftwareDeviceSettings"
+
+
+def classnode_writes(src, binding, class_key, settings=None):
     cls = f"{src['control_set']}\\Control\\Class\\{DISPLAY_CLASS}\\{class_key}"
     writes = [
         (cls, "InfPath", REG_SZ, binding["InfPath"], "read from the INF's own file name"),
@@ -494,6 +497,20 @@ def classnode_writes(src, binding, class_key):
         (src["enum_path"], "Driver", REG_SZ, f"{DISPLAY_CLASS}\\{class_key}",
          "the one value that decides which class node the runtime consults for this devnode"),
     ]
+    if settings is None:
+        return writes
+    # A Display class node carries two duties, not one. It records where the package came from, and
+    # it is where the runtime reads which user-mode display driver to load and whether the device is
+    # the VGA-compatible one. A node written with provenance alone was measured to make the display
+    # path worse than the vga node it replaced, so the complete node is the default and an incomplete
+    # one is a flag a caller has to ask for by name.
+    for name in ("InstalledDisplayDrivers", "VgaCompatible"):
+        if name not in settings:
+            raise Bad(f"the INF's [{SETTINGS_SECTION}] chain carries no {name}, so the class node "
+                      f"cannot be completed from {binding['InfPath']}")
+        typ, value, provenance = settings[name]
+        writes.append((f"{src['control_set']}\\Control\\Class\\{DISPLAY_CLASS}\\{class_key}",
+                       name, typ, value, f"read from the INF's {name} line at {provenance}"))
     return writes
 
 
@@ -525,8 +542,20 @@ def cmd_classnode(a):
     # `--check` grades the binding it finds rather than inventing a new subkey to be disappointed by.
     already = shown(now, "InfPath") == binding["InfPath"]
     target = a.class_key or (bound_to if already else free_class_key(h, DISPLAY_CLASS))
+    settings = None
+    if a.provenance_only:
+        print("provenance-only: %s and %s will NOT be written. Measured at this pin, a class node "
+              "that carries provenance alone mapped less than the vga node it replaced."
+              % ("InstalledDisplayDrivers", "VgaCompatible"))
+    else:
+        settings = inf_settings(a.inf, a.settings_section)
+        print("the values that make the node complete, read from the same INF:")
+        for name in ("InstalledDisplayDrivers", "VgaCompatible"):
+            if name in settings:
+                typ, value, provenance = settings[name]
+                print("  %-24s %r  [%s]  %s" % (name, value, TYPE_NAMES[typ], provenance))
     del h
-    writes = classnode_writes(src, binding, target)
+    writes = classnode_writes(src, binding, target, settings)
     print("class subkey: %s (%s)" % (target, "reusing the node it already points at"
                                      if target == bound_to else "a fresh node, so the old one survives"))
     print("writes:")
@@ -566,8 +595,9 @@ def cmd_classnode(a):
     h = open_hive(a.hive)
     vals = value_map(h, descend(h, f"{src['control_set']}\\Control\\Class\\{DISPLAY_CLASS}"
                                    f"\\{target}".split("\\")))
-    for name in ("InfPath", "InfSection", "Service", "DriverDesc"):
-        print("  %-15s %s" % (name, shown(vals, name)))
+    for name in ("InfPath", "InfSection", "Service", "DriverDesc",
+                 "InstalledDisplayDrivers", "VgaCompatible"):
+        print("  %-24s %s" % (name, shown(vals, name)))
     driver = value_map(h, descend(h, src["enum_path"].split("\\"))).get("driver")
     print("  Driver          %s" % ("(absent)" if driver is None else decode(h, driver)))
     print("rollback record: %s" % a.record)
@@ -682,6 +712,11 @@ def main():
                    help="four-digit class subkey; the default takes the next unused one")
     n.add_argument("--record", default="classnode-before.json",
                    help="where the previous Driver value is kept, so the change is one write to undo")
+    n.add_argument("--settings-section", default=SETTINGS_SECTION,
+                   help="the INF section whose AddReg chain carries the display selection values")
+    n.add_argument("--provenance-only", action="store_true",
+                   help="write the install provenance and omit the display selection values; "
+                        "measured to be a downgrade, so it has to be asked for by name")
     n.add_argument("--check", action="store_true", help="grade the hive, change nothing")
     n.add_argument("--apply", action="store_true", help="write the class node and repoint Driver")
     a = ap.parse_args()

@@ -187,22 +187,44 @@ def test_a_class_node_bound_from_the_real_inf_reads_back_the_same(tmp_path):
     assert "verdict: BOUND" in after.stdout, after.stdout
 
 
-def test_the_measured_finding_is_pinned_so_it_cannot_be_forgotten():
-    """Rebinding provenance alone removed the one thing that had started to work.
+def test_a_class_node_is_written_complete_by_default():
+    """The measured defect, pinned the other way round.
 
-    A boot with the display DLL only: `ati2dvag.dll` mapped. The same boot with the class node also
-    repointed at the INF's values, which carry no `InstalledDisplayDrivers` and no `Settings` subkey:
-    the DLL was opened and never mapped, and the guest reported no resolution at all. The class node is
-    where the runtime reads which display driver to load, so a node that names an INF and nothing else
-    is a worse answer than the vga node it replaced.
+    The first `classnode` wrote install provenance and nothing else. Booted, that node mapped LESS
+    than the vga node it replaced: `ati2dvag.dll` was opened and never mapped, and the guest reported
+    no resolution at all (work/runs/desktop2). A Display class node carries two duties, the record of
+    where the package came from and the runtime's answer to "which display driver, and is this the
+    VGA one", so completing one and leaving the other empty is a downgrade that looks like progress
+    because the value that changed is the one being audited. The complete node is now the default and
+    the incomplete one is a flag.
     """
     src = TOOL.read_text()
-    assert "classnode_writes" in src
     start = src.index("def classnode_writes")
     block = src[start:src.index("\ndef ", start + 10)]
-    assert "InstalledDisplayDrivers" not in block, \
-        "the writes still omit InstalledDisplayDrivers, which is the measured defect"
-    ledger = (ROOT.parent.parent.parent / "plan" / "0007-display-graft-boot" / "README.md")
-    if ledger.is_file():
-        text = ledger.read_text()
-        assert "class node" in text.lower(), "the dead-ends ledger has to carry this finding"
+    assert '"InstalledDisplayDrivers"' in block, "the display selection must be written"
+    assert '"VgaCompatible"' in block, "and so must the vga-compatibility the runtime reads"
+    assert "settings is None" in block, "the incomplete node has to be an explicit choice"
+    assert "--provenance-only" in src, "and the name of that choice has to say what it omits"
+
+
+def test_an_incomplete_chain_is_refused_rather_than_written_silently(tmp_path):
+    """A caller who asks for the complete node and hands over an INF without it must be stopped."""
+    import importlib
+
+    module = importlib.import_module("registration_graft")
+    src = {"control_set": "ControlSet001", "enum_path": "ControlSet001\\Enum\\PCI\\x",
+           "class_key": "0001"}
+    binding = {"InfPath": "x.inf", "InfSection": "s", "ProviderName": "P", "DriverDesc": "D",
+               "MatchingDeviceId": "pci\\ven_1002&dev_67b0", "Service": "ati2mtag",
+               "Class": "Display", "DriverDate": "01/01/2020", "DriverVersion": "1.0"}
+    full = module.classnode_writes(src, binding, "0002",
+                                   {"InstalledDisplayDrivers": (7, ["ati2dvag"], "inf:x.inf:1"),
+                                    "VgaCompatible": (4, 0, "inf:x.inf:2")})
+    names = [w[1] for w in full]
+    assert "InstalledDisplayDrivers" in names and "VgaCompatible" in names
+    assert len(names) == len(set(names)), "a value is written once onto one node"
+    with pytest.raises(module.Bad) as raised:
+        module.classnode_writes(src, binding, "0002", {"VgaCompatible": (4, 0, "inf:x.inf:2")})
+    assert "InstalledDisplayDrivers" in str(raised.value), raised.value
+    assert module.classnode_writes(src, binding, "0002", None), \
+        "the provenance-only form still exists, but only when settings is passed as None on purpose"
