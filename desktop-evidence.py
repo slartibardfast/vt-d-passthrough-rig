@@ -47,6 +47,40 @@ def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+# The display drivers win32k can put in the session, newest name first. A mapping is not a render:
+# win32k loads the vendor display driver, and when it declines to enable, it maps the in-box one over
+# the same base address and the desktop appears at 640x480 with the vendor DLL still in the log. So
+# the question the verdict has to answer is which display driver was mapped LAST, and the log order is
+# the only thing that says so. The captor logs each event twice (full path and bare name), so a
+# repeat of the same basename at the same base is one event and is dropped before the last wins.
+DISPLAY_DRIVERS = ("ati2dvag.dll", "framebuf.dll", "vga.dll")
+
+
+def display_driver_sequence(text, pattern=MODULE):
+    """The deduplicated sequence of display-driver map events, in log order."""
+    seq = []
+    for line in text.splitlines():
+        m = pattern.search(line)
+        if not m:
+            continue
+        name = m.group(1).replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if name not in DISPLAY_DRIVERS:
+            continue
+        base = ""
+        mb = re.search(r"\bbase=(0x[0-9a-fA-F]+)", line)
+        if mb:
+            base = mb.group(1)
+        if seq and seq[-1][0] == name and seq[-1][1] == base:
+            continue  # the same event, logged a second time under its bare name
+        seq.append((name, base))
+    return seq
+
+
+def last_display_driver(text):
+    seq = display_driver_sequence(text)
+    return seq[-1][0] if seq else None
+
+
 def need(run, rel):
     path = run / rel
     if not path.is_file():
@@ -97,6 +131,9 @@ def build(run, attestation=None):
     meta = json.loads(meta_path.read_text())
     video = video_report(run)
     modules = loaded_modules(run)
+    kdc_text = decode(need(run, "kdc-detached.log"))
+    last_display = last_display_driver(kdc_text)
+    display_seq = display_driver_sequence(kdc_text)
     sources = {rel: sha256(run / rel) for rel in
                ("run.json", "kdc-detached.log", "evidence/WINDOWS/videoctl.txt")}
 
@@ -117,9 +154,12 @@ def build(run, attestation=None):
         "channel_sha256": meta.get("channel_sha256"),
         "desktop_reached": bool(meta.get("desktop_reached",
                                          meta.get("contract", {}).get("desktop_reached", False))),
-        # The display driver mapped into win32k is as far as "ATI rendered" gets from the host side.
-        # The session it drove is reported separately, by width and height, below.
-        "ati_rendered": display_dll,
+        # What win32k put in the session LAST, not what it loaded first. The vendor DLL mapping and
+        # then being displaced by the in-box one is the failure this field exists to catch, and
+        # reading "appears in a MODULE LOAD record" as "rendered" reported that failure as a pass.
+        "ati_rendered": last_display == "ati2dvag.dll",
+        "last_display_driver": last_display,
+        "display_driver_sequence": [name for name, _ in display_seq],
         "driver_loaded": display_dll and miniport,
         "driver_identity": "ati2mtag.sys miniport, %s display driver"
                            % (video.get("InstalledDisplayDrivers") or "unreported"),
@@ -138,6 +178,11 @@ def build(run, attestation=None):
     if not display_dll:
         evidence["unevidenced"]["ati_rendered"] = \
             "no MODULE LOAD record for ati2dvag.dll in kdc-detached.log"
+    elif last_display != "ati2dvag.dll":
+        evidence["unevidenced"]["ati_rendered"] = (
+            "ati2dvag.dll mapped and then %s was mapped after it, over the same base address, so the "
+            "session fell back to the in-box driver; the sequence is %s"
+            % (last_display or "no display driver", ", ".join(n for n, _ in display_seq)))
     if not miniport:
         evidence["unevidenced"]["driver_loaded"] = \
             "no MODULE LOAD record for ati2mtag.sys in kdc-detached.log"

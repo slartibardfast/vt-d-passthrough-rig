@@ -185,8 +185,14 @@ def test_the_boot_that_loaded_the_display_driver_now_fails_on_the_operators_clau
         (DESKTOP_RUN / "evidence" / "WINDOWS" / "videoctl.txt").read_bytes())
     module = build(run)
     assert module["desktop_reached"] is True
-    assert module["ati_rendered"] is True, "the boot that installed the DLL mapped it"
-    assert module["driver_loaded"] is True
+    # This fixture is the real boot the ledger once read as "the DLL mapped, so it rendered". Its own
+    # log says ati2dvag.dll mapped and then vga.dll was mapped over the same base address, so the
+    # session fell back to the in-box driver. The honest reading of that run is False, and the record
+    # has to name the fallback rather than the mapping that preceded it.
+    assert module["last_display_driver"] == "vga.dll"
+    assert module["ati_rendered"] is False, "a mapping is not a render; the fallback is in the log"
+    assert "fell back" in module["unevidenced"]["ati_rendered"]
+    assert module["driver_loaded"] is True, "the miniport did load, and still does"
     assert module["width"] < 1024, "no boot of this card has held a session at the bar's width"
     assert module["operator_physical_monitor"] is False
 
@@ -218,3 +224,20 @@ def test_an_attestation_that_is_absent_or_empty_is_refused_rather_than_counted(t
     with pytest.raises(module.Bad) as raised:
         module.build(run, empty)
     assert "witnesses nothing" in str(raised.value), str(raised.value)
+
+
+def test_each_map_logged_twice_is_one_event_and_the_last_driver_wins(tmp_path):
+    """The captor logs every map as a full path and again as a bare name; the order is the answer."""
+    run = make_run(tmp_path, modules=[
+        r"MODULE LOAD pid=0x80800001 base=0xfffff97fff483000 name=\WINDOWS\System32\ati2dvag.dll",
+        "MODULE LOAD pid=0x80800001 base=0xfffff97fff483000 name=ati2dvag.dll",
+        r"MODULE LOAD pid=0x80800001 base=0xfffff97fff483000 name=\WINDOWS\System32\vga.dll",
+        "MODULE LOAD pid=0x80800000 base=0xfffff97fff483000 name=vga.dll",
+        r"MODULE LOAD pid=0x80800000 base=0xfffff97fff483000 name=\WINDOWS\System32\ati2dvag.dll",
+        "MODULE LOAD pid=0x80800000 base=0xfffff97fff483000 name=ati2dvag.dll",
+    ])
+    module = build(run)
+    assert module["display_driver_sequence"] == ["ati2dvag.dll", "vga.dll", "ati2dvag.dll"], \
+        "three events, not six records"
+    assert module["ati_rendered"] is True, "the vendor driver is the one left in the session"
+    assert "ati_rendered" not in module["unevidenced"]

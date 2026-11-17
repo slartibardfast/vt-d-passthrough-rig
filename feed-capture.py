@@ -153,6 +153,13 @@ def main():
     c.nav(eyes.URL + "/login")
     answer = eyes.login(c)
     print("login:", json.dumps(answer)[:120], flush=True)
+    # The endpoint's reply arrives as the page's own JSON text, not as an object, and a guard that
+    # expected a dict refused a working credential and stopped the capture before it took a frame.
+    if isinstance(answer, str):
+        try:
+            answer = json.loads(answer)
+        except json.JSONDecodeError:
+            answer = {}
     if not (isinstance(answer, dict) and answer.get("ok")):
         print("the feed refused the credential; check GLKVM_USER and GLKVM_PASS", file=sys.stderr)
         return 2
