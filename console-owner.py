@@ -71,6 +71,32 @@ def console_number(video_map_, devicemap_text):
     return "0" if "0" in video_map_ else None
 
 
+PROFILE_WANT = ("Attach.ToDesktop", "DefaultSettings.XResolution", "DefaultSettings.YResolution",
+                "DefaultSettings.BitsPerPel", "DefaultSettings.VRefresh")
+
+
+def profile_slots(h, cs):
+    """`{guid: {slot: values}}` from the hardware profile, which is where the desktop mode lives.
+
+    Reading `Control\Video` alone says which driver a slot loads; it does not say whether the slot
+    opens on the desktop or at what size. A boot in this rig asked its attached adapter for
+    2560x1440x32@59 and the session fell back to the VGA console at 640x480x4, and the request lived
+    here, where nothing was reading. A slot absent from this subtree opens no desktop at all.
+    """
+    cfg = rg.descend(h, [cs, "Control", "IDConfigDB", "CurrentConfig"])
+    m = rg.value_map(h, cfg)
+    profile = "%04d" % rg.decode(h, m["default"]) if "default" in m else "0001"
+    root = rg.descend(h, [cs, "Hardware Profiles", profile, "System", "CurrentControlSet",
+                          "Control", "VIDEO"])
+    out = {"profile": profile, "slots": {}}
+    for guid in h.node_children(root) or []:
+        for slot in h.node_children(guid) or []:
+            got = values(h, slot, PROFILE_WANT)
+            if got:
+                out["slots"]["%s\\%s" % (h.node_name(guid), h.node_name(slot))] = got
+    return out
+
+
 def values(h, node, only=None):
     out = {}
     for v in h.node_values(node) or []:
@@ -120,6 +146,24 @@ def report(system, devicemap):
             print("       %-26s %s" % (key, got))
         if bound and h.node_name(sub).lower() == str(bound).lower().split("\\")[-1]:
             print("       <== the node the devnode is bound to")
+
+    prof = profile_slots(h, cs)
+    print("\n== the hardware profile (profile %s): who opens a desktop, and at what mode ==" %
+          prof["profile"])
+    if not prof["slots"]:
+        print("   (no profile slots: nothing opens a desktop through this profile)")
+    marked = False
+    for name, got in sorted(prof["slots"].items()):
+        mode = "%sx%sx%s@%s" % (got.get("DefaultSettings.XResolution"), got.get("DefaultSettings.YResolution"),
+                                got.get("DefaultSettings.BitsPerPel"), got.get("DefaultSettings.VRefresh"))
+        print("   %s  Attach.ToDesktop=%s  mode=%s"
+              % (name, got.get("Attach.ToDesktop"), mode))
+        if vmap.get(who, "").lower().endswith(name.lower()):
+            marked = True
+            print("       <== this is the console slot")
+    if not marked:
+        print("   the console slot %s has no entry here: nothing asks for it, so it opens as the "
+              "fallback rather than as a chosen desktop" % (vmap.get(who) or "unknown"))
 
     print("\n== every Control\\Video slot, and what it claims ==")
     console = None
