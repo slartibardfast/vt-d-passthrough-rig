@@ -49,7 +49,7 @@ set -uo pipefail
 
 RIG=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 GOLDEN="" CHANNEL="" NAME="" RUNS="$RIG/work/runs" TIMEOUT=600 PREPARE="" DRY="" TREE=""
-HOLD=240 NO_BOOTLOG="" DEST="" FORCE="" DISPLAY_DLL="" CLASS_BINDING=""
+HOLD=240 NO_BOOTLOG="" DEST="" FORCE="" DISPLAY_DLL="" CLASS_BINDING="" DISPLAY_MODE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -63,6 +63,7 @@ while [ $# -gt 0 ]; do
     --force) FORCE=1; shift;;
     --display-dll) DISPLAY_DLL=${2:-}; shift 2;;
     --class-binding) CLASS_BINDING=${2:-}; shift 2;;
+    --display-mode) DISPLAY_MODE=${2:-}; shift 2;;
     --no-bootlog) NO_BOOTLOG=1; shift;;
     --prepare-only) PREPARE=1; shift;;
     --dry-run) DRY=1; shift;;
@@ -283,6 +284,8 @@ PRINT_ONLY=1 WORK="$OVERLAY" CHANNEL="$RUN_CHANNEL" FORMAT=qcow2 CACHE=writeback
 
 if [ -n "$DRY" ]; then
   printf 'plan: the overlay is given /bootlog, the Startup trigger, and the nonce, unless --no-bootlog\n'
+  [ -z "$DISPLAY_MODE" ] || printf 'plan: the overlay asks the attached display for %s\n' \
+    "$DISPLAY_MODE"
   [ -z "$DISPLAY_DLL" ] || printf 'plan: the overlay is given %s in system32\n' \
     "$(basename "$DISPLAY_DLL")"
   [ -z "$CLASS_BINDING" ] || printf 'plan: the class node on the overlay volume is bound from %s\n' \
@@ -309,6 +312,7 @@ if [ -z "$NO_BOOTLOG" ] || [ -n "$DISPLAY_DLL" ] || [ -n "$CLASS_BINDING" ]; the
   fi
   [ -z "$DISPLAY_DLL" ] || SETTINGS+=(--display-dll "$DISPLAY_DLL")
   [ -z "$CLASS_BINDING" ] || SETTINGS+=(--class-binding "$CLASS_BINDING")
+  [ -z "$DISPLAY_MODE" ] || SETTINGS+=(--display-mode "$DISPLAY_MODE")
   printf 'setting: the overlay is configured by golden-settings.py, which proves each setting from a second mount\n'
   "$RIG/golden-settings.py" "${SETTINGS[@]}" || {
       printf 'the overlay could not be configured; refusing to boot a run that records nothing\n' >&2

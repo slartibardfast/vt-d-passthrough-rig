@@ -654,6 +654,112 @@ def cmd_graft(a):
     return 0 if verdict == "BOUND-READY" else 1
 
 
+# ---------- the mode the desktop is asked for ----------
+
+# The hardware profile is where the mode a desktop opens at lives, and this is the only writer in the
+# rig that names it. `Control\Video\{GUID}` says which user-mode driver the session uses; the profile
+# says whether that device opens on the desktop and at what size. A guest whose attached adapter asks
+# for a mode the path cannot make answers by falling back to the VGA-compatible console, and the
+# fallback is silent: the desktop simply appears at 640x480 with the wrong driver mapped.
+MODE_RE = re.compile(r"^(\d{3,5})x(\d{3,5})x(8|16|32)@(50|56|60|70|72|75|85)$")
+MODE_VALUES = ("DefaultSettings.XResolution", "DefaultSettings.YResolution",
+               "DefaultSettings.BitsPerPel", "DefaultSettings.VRefresh")
+
+
+def parse_mode(text):
+    m = MODE_RE.fullmatch(text or "")
+    if not m:
+        raise Bad(f"{text!r} is not a display mode; write it WIDTHxHEIGHTxBITS@REFRESH, for example "
+                  f"1024x768x32@60")
+    return tuple(int(x) for x in m.groups())
+
+
+def current_profile(h, cs):
+    cfg = descend(h, [cs, "Control", "IDConfigDB", "CurrentConfig"])
+    m = value_map(h, cfg)
+    if "default" in m:
+        return "%04d" % decode(h, m["default"])
+    return "0001"
+
+
+def video_profile_path(cs, profile, vid):
+    return (f"{cs}\\Hardware Profiles\\{profile}\\System\\CurrentControlSet\\Control\\VIDEO"
+            f"\\{{{vid}}}\\0000")
+
+
+def mode_writes(base, mode, monitors):
+    width, height, bpp, refresh = mode
+    values = dict(zip(MODE_VALUES, (width, height, bpp, refresh)))
+    writes = [(base, "Attach.ToDesktop", REG_DWORD, 1,
+               "the device has to open on the desktop for its mode to matter")]
+    for name in MODE_VALUES:
+        writes.append((base, name, REG_DWORD, values[name],
+                       "the mode win32k asks this adapter for"))
+    for mon in monitors:
+        for name in MODE_VALUES:
+            writes.append((base + "\\" + mon, name, REG_DWORD, values[name],
+                           "the monitor entry repeats the mode, and a slot whose two reads disagree "
+                           "is one win32k may refuse"))
+    return writes
+
+
+def read_mode(h, base):
+    node = descend(h, base.split("\\"))
+    if node is None:
+        return None
+    m = value_map(h, node)
+    return {name: (decode(h, m[name.lower()]) if name.lower() in m else None)
+            for name in MODE_VALUES + ("Attach.ToDesktop",)}
+
+
+def cmd_display_mode(a):
+    mode = parse_mode(a.mode)
+    h = open_hive(a.hive, write=a.apply)
+    d = find_device(h, DEVICE_ID)
+    cs, vid = d["control_set"], d["videoid"]
+    if not vid:
+        raise Bad("the devnode has no Device Parameters\\VideoID, so the profile slot the desktop "
+                  "reads cannot be named")
+    profile = current_profile(h, cs)
+    base = video_profile_path(cs, profile, vid)
+    node = descend(h, base.split("\\"))
+    monitors = []
+    if node is not None:
+        monitors = [h.node_name(c) for c in (h.node_children(node) or [])
+                    if h.node_name(c).lower().startswith("mon")]
+    print(f"device:        {d['enum_path']}")
+    print(f"video slot:    {{{vid}}}")
+    print(f"profile:       {profile}")
+    print(f"reads now:     {read_mode(h, base)}")
+    print(f"mode asked for: {mode[0]}x{mode[1]}x{mode[2]}@{mode[3]}")
+    writes = mode_writes(base, mode, monitors)
+    for path, name, typ, value, why in writes:
+        print(f"  {path}\\{name} = {value!r}  ({why})")
+    want = {"DefaultSettings.XResolution": mode[0], "DefaultSettings.YResolution": mode[1],
+            "DefaultSettings.BitsPerPel": mode[2], "DefaultSettings.VRefresh": mode[3]}
+    now = read_mode(h, base) or {}
+    matches = all(now.get(k) == v for k, v in want.items()) and now.get("Attach.ToDesktop") == 1
+    if not a.apply:
+        if a.check:
+            print("verdict: %s" % ("MODE-SET" if matches else "MODE-NOT-SET"))
+            return 0 if matches else 1
+        print("print-only: the hive is unchanged")
+        return 0
+    for path, name, typ, value, _ in writes:
+        n = descend(h, path.split("\\"), create=True)
+        h.node_set_value(n, {"key": name, "t": typ, "length": len(encode(typ, value)),
+                             "value": encode(typ, value)})
+    h.commit(a.hive)
+    after = read_mode(open_hive(a.hive), base)
+    ok = bool(after) and after["DefaultSettings.XResolution"] == mode[0] \
+        and after["DefaultSettings.YResolution"] == mode[1] \
+        and after["DefaultSettings.BitsPerPel"] == mode[2] \
+        and after["DefaultSettings.VRefresh"] == mode[3]
+    print(f"read back:     {after}")
+    print("verdict: %s" % ("MODE-SET" if ok else "MODE-NOT-SET"))
+    return 0 if ok else 1
+
+
 def build_writes(src, a, drivers, vgacompat):
     """The target set, in words: bind the miniport, then make the device-facing copy agree."""
     cs, ck, vid = src["control_set"], src["class_key"], src["videoid"]
@@ -719,6 +825,12 @@ def main():
                         "measured to be a downgrade, so it has to be asked for by name")
     n.add_argument("--check", action="store_true", help="grade the hive, change nothing")
     n.add_argument("--apply", action="store_true", help="write the class node and repoint Driver")
+    m = sub.add_parser("display-mode",
+                       help="set the mode an attached display opens the desktop at")
+    m.add_argument("hive")
+    m.add_argument("--mode", required=True, help="WIDTHxHEIGHTxBITS@REFRESH, e.g. 1024x768x32@60")
+    m.add_argument("--check", action="store_true", help="report the reads and change nothing")
+    m.add_argument("--apply", action="store_true", help="write the profile slot")
     a = ap.parse_args()
     if a.cmd == "check":
         return cmd_check(a)
@@ -726,6 +838,8 @@ def main():
         return cmd_graft(a)
     if a.cmd == "classnode":
         return cmd_classnode(a)
+    if a.cmd == "display-mode":
+        return cmd_display_mode(a)
     ap.print_help()
     return 2
 

@@ -167,3 +167,32 @@ def test_multi_string_encoding_is_what_the_registry_holds():
     assert rg.encode(rg.REG_MULTI_SZ, ["ati2dvag", "ati2dvag2"]).count(b"\0\0") >= 2
     assert rg.encode(rg.REG_DWORD, 0) == b"\0\0\0\0"
     assert rg.encode(rg.REG_SZ, "Video").endswith(b"\0\0")
+
+
+def test_a_mode_is_read_only_in_the_form_the_tool_can_write():
+    import importlib
+
+    module = importlib.import_module("registration_graft")
+    assert module.parse_mode("1024x768x32@60") == (1024, 768, 32, 60)
+    for bad in ("1024x768", "1024X768x32@60", "1024x768x24@60", "1024x768x32@59", "", None):
+        with pytest.raises(module.Bad) as raised:
+            module.parse_mode(bad)
+        assert "WIDTHxHEIGHTxBITS@REFRESH" in str(raised.value), str(raised.value)
+
+
+def test_the_mode_is_written_where_the_desktop_reads_it_and_to_both_entries():
+    """The slot and its monitor child both carry the mode, and a mismatch between them is refused."""
+    import importlib
+
+    module = importlib.import_module("registration_graft")
+    base = ("ControlSet001\\Hardware Profiles\\0001\\System\\CurrentControlSet\\Control"
+            "\\VIDEO\\{9AEF0D0F-2356-4E54-9833-53DAB38FD7CC}\\0000")
+    writes = module.mode_writes(base, (1024, 768, 32, 60), ["Mon12345678"])
+    names = [w[1] for w in writes]
+    assert names.count("Attach.ToDesktop") == 1, "the desktop attachment is stated, not assumed"
+    assert names.count("DefaultSettings.XResolution") == 2, "the slot and its monitor both carry it"
+    slot = {w[1]: w[3] for w in writes if w[0] == base}
+    assert (slot["DefaultSettings.XResolution"], slot["DefaultSettings.YResolution"],
+            slot["DefaultSettings.BitsPerPel"], slot["DefaultSettings.VRefresh"]) == (1024, 768, 32, 60)
+    mon = {w[1]: w[3] for w in writes if w[0].endswith("Mon12345678")}
+    assert mon["DefaultSettings.YResolution"] == 768, "so a reader of either entry sees one mode"

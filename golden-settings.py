@@ -229,18 +229,23 @@ def main():
     ap.add_argument("--class-binding", type=Path, default=None, metavar="INF",
                     help="rebind the device's Display class node to the values in this INF, every one "
                          "of them read from the file rather than typed in")
+    ap.add_argument("--display-mode", default=None, metavar="WxHxB@R",
+                    help="the mode the attached display opens its desktop at, for example "
+                         "1024x768x32@60; written to the hardware profile, which is where the mode a "
+                         "desktop opens at lives")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--record", type=Path, default=None)
     a = ap.parse_args()
     if not a.image.is_file():
         raise Bad("no such image: %s" % a.image)
-    actions = [x for x in (a.bootlog, a.startup_hook, a.runid, a.display_dll, a.class_binding) if x]
+    actions = [x for x in (a.bootlog, a.startup_hook, a.runid, a.display_dll, a.class_binding,
+                           a.display_mode) if x]
     if not actions:
         # A bare --check would report nothing at all and exit 0, which reads as a clean answer to a
         # question nobody asked. Naming the setting is the question.
         raise Bad("say which setting: --bootlog, --startup-hook <file>, --runid <text>, "
-                  "--display-dll <file>, or --class-binding <inf> (add --check to read it back "
-                  "without writing)")
+                  "--display-dll <file>, --class-binding <inf>, or --display-mode WxHxB@R (add "
+                  "--check to read it back without writing)")
     if a.startup_hook and not a.startup_hook.is_file():
         raise Bad("no such startup hook template: %s" % a.startup_hook)
     if a.display_dll:
@@ -401,6 +406,30 @@ def main():
                     raise Bad("the class-node binding failed: %s"
                               % ((r.stdout + r.stderr).strip()[:400] or "no output"))
                 expected["class-binding"] = ("bound", str(a.class_binding), None)
+
+        if a.display_mode:
+            hive = find(MOUNT, SYSTEM_HIVE)
+            if hive is None:
+                raise Bad("no %s on the volume, so there is no profile slot to set" % SYSTEM_HIVE)
+            call = [sys.executable, str(RIG / "registration_graft.py"), "display-mode", str(hive),
+                    "--mode", a.display_mode]
+            if a.check:
+                r = subprocess.run([str(c) for c in ["sudo"] + call + ["--check"]],
+                                   capture_output=True, text=True)
+                tail = [l for l in (r.stdout + r.stderr).splitlines() if "verdict" in l]
+                print("display-mode: %s" % (tail[-1] if tail else (r.stdout + r.stderr).strip()[:120]))
+                if r.returncode != 0:
+                    missing.append("display-mode")
+            else:
+                r = subprocess.run([str(c) for c in ["sudo"] + call + ["--apply"]],
+                                   capture_output=True, text=True)
+                keep = ("reads now:", "read back", "verdict", "video slot", "profile:")
+                sys.stdout.write("".join(l + "\n" for l in (r.stdout + r.stderr).splitlines()
+                                         if any(k in l for k in keep)))
+                if r.returncode != 0:
+                    raise Bad("the display mode was not set: %s"
+                              % ((r.stdout + r.stderr).strip()[:400] or "no output"))
+                expected["display-mode"] = ("mode", a.display_mode, None)
         umount()
         if a.check:
             if missing:
@@ -454,6 +483,19 @@ def main():
                                % (tail[-1] if tail else (r.stdout + r.stderr).strip()[:160]))
                 else:
                     print("read back class-binding: %s" % (tail[-1] if tail else "BOUND"))
+            elif name == "display-mode":
+                hive = find(MOUNT, SYSTEM_HIVE)
+                r = subprocess.run([str(c) for c in ["sudo", sys.executable,
+                                                     str(RIG / "registration_graft.py"),
+                                                     "display-mode", str(hive),
+                                                     "--mode", want, "--check"]],
+                                   capture_output=True, text=True)
+                tail = [l for l in (r.stdout + r.stderr).splitlines() if "verdict" in l]
+                if r.returncode != 0:
+                    bad.append("the profile mode is not %s after the write: %s"
+                               % (want, tail[-1] if tail else (r.stdout + r.stderr).strip()[:160]))
+                else:
+                    print("read back display-mode: %s" % (tail[-1] if tail else "MODE-SET"))
             elif name == "runid":
                 rp = find(MOUNT, RUNID_FILE)
                 if rp is None:
