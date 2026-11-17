@@ -79,7 +79,8 @@ done
 EVIDENCE=( "WINDOWS/capture.txt" "WINDOWS/devicemap.txt" "WINDOWS/devnode.txt"
            "WINDOWS/videoctl.txt" "WINDOWS/enum-pci.txt" "WINDOWS/svc-ati2mtag.txt"
            "WINDOWS/setupapi.log" "WINDOWS/runid.txt" "letters-hook.txt" "WINDOWS/ntbtlog.txt"
-           "WINDOWS/system32/config/system" )
+           "WINDOWS/ati-files.txt" "WINDOWS/enum-display.txt" "WINDOWS/profile-video.txt"
+           "WINDOWS/SysEvent.Evt" "WINDOWS/system32/config/system" )
 
 if [ -n "$TREE" ]; then
   for rel in "${EVIDENCE[@]}"; do

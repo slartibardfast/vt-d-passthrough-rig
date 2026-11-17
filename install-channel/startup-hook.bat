@@ -49,5 +49,22 @@ for %%d in (c d e f g h i) do @if exist %%d:\drv\ati2mtag.sys @(set FOUND=%%d& e
 if defined FOUND goto end
 echo letters-hook-failed no volume held drv\ati2mtag.sys >> %HOOK%
 :end
+rem The user-mode display files actually present, with sizes. A display driver that loads and
+rem then declines is often missing part of its own package, and only the DLL the host installs
+rem was ever visible from outside the guest.
+dir %SystemRoot%\system32\ati*.* > %SystemRoot%\ati-files.txt 2>&1
+echo dir-ati rc=%ERRORLEVEL% nonce=%RUNID% >> %CAP%
+rem The monitor devices and their EDIDs. The modes a driver may offer are bounded by what the
+rem monitor advertises, and a Default_Monitor carrying a bad EDID advertises nothing.
+reg query "HKLM\SYSTEM\CurrentControlSet\Enum\DISPLAY" /s > %SystemRoot%\enum-display.txt 2>&1
+echo enum-display rc=%ERRORLEVEL% nonce=%RUNID% >> %CAP%
+rem The mode the session is asked for, in the hardware profile, which is where that request
+rem lives rather than in the per-adapter key.
+reg query "HKLM\SYSTEM\CurrentControlSet\Hardware Profiles\0001\System\CurrentControlSet\Control\VIDEO" /s > %SystemRoot%\profile-video.txt 2>&1
+echo profile-video rc=%ERRORLEVEL% nonce=%RUNID% >> %CAP%
+rem The system event log, copied while the session that wrote it is still up: a display driver
+rem that fails to enable records why here, and no run of this campaign has ever captured it.
+copy /y %SystemRoot%\system32\config\SysEvent.Evt %SystemRoot%\SysEvent.Evt > nul 2>&1
+echo eventlog rc=%ERRORLEVEL% nonce=%RUNID% >> %CAP%
 echo capture-end %RUNID% %date% %time% >> %CAP%
 echo letters-hook-end %date% %time% >> %HOOK%
