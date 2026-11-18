@@ -849,6 +849,7 @@ def cmd_package(a):
                   f"package it wants cannot be placed")
     package = Path(a.package)
     available = {q.name.lower(): q for q in package.iterdir() if q.is_file()}
+    omit = {name.lower() for name in (getattr(a, "omit", None) or [])}
     entries, skipped, missing, seen = [], [], [], set()
     for source, dest_name, dest_id in plan:
         if dest_id == "12" and not a.with_drivers:
@@ -858,6 +859,12 @@ def cmd_package(a):
             skipped.append((dest_name, "destination %s is not this session's business" % dest_id))
             continue
         if dest_name.lower() in seen:
+            continue
+        if dest_name.lower() in omit:
+            # Withholding a file the INF names is a deliberate experiment, so it is named in the
+            # output rather than passed over: a package that is short a file by accident and one that
+            # is short by request look identical in the volume otherwise.
+            skipped.append((dest_name, "omitted by request"))
             continue
         seen.add(dest_name.lower())
         src = available.get(source.lower()) or available.get(dest_name.lower())
@@ -1045,6 +1052,10 @@ def main():
                      help="the INF's install section; default is the one its model entry names")
     pkg.add_argument("--package", required=True, type=Path,
                      help="the directory holding the package's files")
+    pkg.add_argument("--omit", action="append", default=[], metavar="NAME",
+                     help="withhold one of the files the INF names, by destination name; the omission "
+                          "is reported, because a package short a file by request and one short by "
+                          "accident are the same volume otherwise")
     pkg.add_argument("--with-drivers", action="store_true",
                      help="also place the destination-12 files, which this rig keeps on the channel")
     pkg.add_argument("--apply", action="store_true")

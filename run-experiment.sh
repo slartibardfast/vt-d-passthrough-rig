@@ -49,7 +49,7 @@ set -uo pipefail
 
 RIG=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 GOLDEN="" CHANNEL="" NAME="" RUNS="$RIG/work/runs" TIMEOUT=600 PREPARE="" DRY="" TREE=""
-HOLD=240 NO_BOOTLOG="" DEST="" FORCE="" DISPLAY_DLL="" CLASS_BINDING="" CLASS_KEY="" DISPLAY_MODE="" DISPLAY_PACKAGE="" DISPLAY_INF="" DROP_PHANTOMS=""
+HOLD=240 NO_BOOTLOG="" DEST="" FORCE="" DISPLAY_DLL="" CLASS_BINDING="" CLASS_KEY="" DISPLAY_MODE="" DISPLAY_PACKAGE="" DISPLAY_INF="" DROP_PHANTOMS="" DISPLAY_OMIT=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -68,6 +68,7 @@ while [ $# -gt 0 ]; do
     --display-package) DISPLAY_PACKAGE=${2:-}; shift 2;;
     --display-inf) DISPLAY_INF=${2:-}; shift 2;;
     --drop-phantom-monitors) DROP_PHANTOMS=1; shift;;
+    --display-omit) DISPLAY_OMIT=${2:-}; shift 2;;
     --no-bootlog) NO_BOOTLOG=1; shift;;
     --prepare-only) PREPARE=1; shift;;
     --dry-run) DRY=1; shift;;
@@ -291,6 +292,7 @@ if [ -n "$DRY" ]; then
   printf 'plan: the overlay is given /bootlog, the Startup trigger, and the nonce, unless --no-bootlog\n'
   [ -z "$DISPLAY_PACKAGE" ] || printf 'plan: the overlay is given the package at %s, by the INF list\n' \
     "$DISPLAY_PACKAGE"
+  [ -n "$DISPLAY_OMIT" ] && printf 'plan: the package withholds %s by request\n' "$DISPLAY_OMIT"
   [ -z "$DROP_PHANTOMS" ] || printf 'plan: the overlay loses the monitors that carry no EDID\n'
   [ -z "$CLASS_KEY" ] || printf 'plan: the class binding rewrites node %s in place\n' "$CLASS_KEY"
   [ -z "$DISPLAY_MODE" ] || printf 'plan: the overlay asks the attached display for %s\n' \
@@ -326,6 +328,11 @@ if [ -z "$NO_BOOTLOG" ] || [ -n "$DISPLAY_DLL" ] || [ -n "$CLASS_BINDING" ]; the
   [ -z "$DISPLAY_PACKAGE" ] || SETTINGS+=(--display-package "$DISPLAY_PACKAGE")
   [ -z "$DISPLAY_INF" ] || SETTINGS+=(--display-inf "$DISPLAY_INF")
   [ -z "$DROP_PHANTOMS" ] || SETTINGS+=(--drop-phantom-monitors)
+  if [ -n "$DISPLAY_OMIT" ]; then
+    # Repeatable: the settings tool takes one name per flag.
+    IFS=',' read -r -a OMITS <<< "$DISPLAY_OMIT"
+    for one in "${OMITS[@]}"; do SETTINGS+=(--display-omit "$one"); done
+  fi
   printf 'setting: the overlay is configured by golden-settings.py, which proves each setting from a second mount\n'
   "$RIG/golden-settings.py" "${SETTINGS[@]}" || {
       printf 'the overlay could not be configured; refusing to boot a run that records nothing\n' >&2

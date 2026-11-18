@@ -244,6 +244,9 @@ def main():
     ap.add_argument("--class-key", default=None, metavar="NNNN",
                     help="the Display class subkey to write; without it the binding goes to a fresh "
                          "node, and with it the node the device already uses is rewritten in place")
+    ap.add_argument("--display-omit", action="append", default=[], metavar="NAME",
+                    help="withhold a file the INF names from the placed package, by destination name; "
+                         "the omission is reported so an experiment cannot be mistaken for an install")
     ap.add_argument("--drop-phantom-monitors", action="store_true",
                     help="delete the Default_Monitor devices that carry no EDID, leaving PnP the "
                          "monitors that do advertise modes; the driver can only offer modes its "
@@ -255,7 +258,7 @@ def main():
         raise Bad("no such image: %s" % a.image)
     actions = [x for x in (a.bootlog, a.startup_hook, a.runid, a.display_dll, a.class_binding,
                            a.class_key, a.display_mode, a.display_package, a.display_inf,
-                           a.drop_phantom_monitors) if x]
+                           a.drop_phantom_monitors, a.display_omit) if x]
     if not actions:
         # A bare --check would report nothing at all and exit 0, which reads as a clean answer to a
         # question nobody asked. Naming the setting is the question.
@@ -440,6 +443,8 @@ def main():
             hive_inf = a.display_inf or a.class_binding
             call = [sys.executable, str(RIG / "registration_graft.py"), "package", str(MOUNT),
                     "--inf", str(hive_inf), "--package", str(a.display_package)]
+            for name in a.display_omit:
+                call += ["--omit", name]
             if not a.check:
                 call.append("--apply")
             r = subprocess.run([str(c) for c in ["sudo"] + call], capture_output=True, text=True)
@@ -450,6 +455,8 @@ def main():
                 raise Bad("the display package was not placed: %s"
                           % ((r.stdout + r.stderr).strip()[:400] or "no output"))
             expected["display-package"] = ("package", str(a.display_package), None)
+            if a.display_omit:
+                expected["display-omit"] = ("omit", ",".join(a.display_omit), None)
 
         if a.drop_phantom_monitors:
             hive = find(MOUNT, SYSTEM_HIVE)
@@ -556,6 +563,8 @@ def main():
                 call = [sys.executable, str(RIG / "registration_graft.py"), "package", str(MOUNT),
                         "--inf", str(a.display_inf or a.class_binding),
                         "--package", str(a.display_package), "--check"]
+                for name in a.display_omit:
+                    call += ["--omit", name]
                 r = subprocess.run([str(c) for c in ["sudo"] + call], capture_output=True, text=True)
                 tail = [l for l in (r.stdout + r.stderr).splitlines() if "verdict" in l]
                 if r.returncode != 0:

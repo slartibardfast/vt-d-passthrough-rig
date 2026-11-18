@@ -317,3 +317,28 @@ def test_the_phantom_monitors_are_removed_and_the_real_ones_survive(tmp_path):
     disp = rg.descend(after, [cs, "Enum", "DISPLAY"])
     survivors = [after.node_name(c) for c in (after.node_children(disp) or [])]
     assert "GLIC21C" in survivors and "RHT1234" in survivors, survivors
+
+
+def test_a_file_the_inf_names_can_be_withheld_and_the_omission_is_reported(tmp_path):
+    """Withholding a component is how the spin's dependence on it is tested, and it has to be visible.
+
+    A package short a file by accident and one short by request are the same volume otherwise, so the
+    tool names the omission instead of quietly placing one file fewer.
+    """
+    from types import SimpleNamespace
+
+    inf = tmp_path / "package.inf"
+    inf.write_text(PACKAGE_INF)
+    package = tmp_path / "package"
+    package.mkdir()
+    for name in ("ati2dvag.dll", "ati2cqag.dll", "atiicdxx.dat", "atimpc64.dll", "atiogl.xml",
+                 "ati2mtag.sys", "ati2erec.dll"):
+        (package / name).write_bytes(name.encode())
+    root = tmp_path / "volume"
+    (root / "WINDOWS").mkdir(parents=True)
+    args = SimpleNamespace(root=str(root), inf=inf, section="ati2mtag_Kaveri_Desktop",
+                           package=str(package), with_drivers=False, check=False, apply=True,
+                           omit=["ati2cqag.dll"])
+    assert rg.cmd_package(args) == 0
+    assert not (root / "WINDOWS" / "system32" / "ati2cqag.dll").exists(), "the withheld file is absent"
+    assert (root / "WINDOWS" / "system32" / "ati2dvag.dll").exists(), "the rest of the package lands"
