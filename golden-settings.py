@@ -500,7 +500,7 @@ def main():
             for src in wanted:
                 dst = target_dir / src.name
                 dst.write_bytes(src.read_bytes())
-                placed[src.name] = sha(src)
+                placed[src.name] = sha(src.read_bytes())
             for name, digest in sorted(placed.items()):
                 print("placed %-14s %s bytes -> C:\\DBG  %s"
                       % (name, (a.guest_files / name).stat().st_size, digest[:12]))
