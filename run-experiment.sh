@@ -49,7 +49,7 @@ set -uo pipefail
 
 RIG=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 GOLDEN="" CHANNEL="" NAME="" RUNS="$RIG/work/runs" TIMEOUT=600 PREPARE="" DRY="" TREE=""
-HOLD=240 NO_BOOTLOG="" DEST="" FORCE="" DISPLAY_DLL="" CLASS_BINDING="" CLASS_KEY="" DISPLAY_MODE="" DISPLAY_PACKAGE="" DISPLAY_INF="" DROP_PHANTOMS="" DISPLAY_OMIT="" KERNEL_DUMP="" GUEST_FILES="" NO_DEBUG=""
+HOLD=240 NO_BOOTLOG="" DEST="" FORCE="" DISPLAY_DLL="" CLASS_BINDING="" CLASS_KEY="" DISPLAY_MODE="" DISPLAY_PACKAGE="" DISPLAY_INF="" DROP_PHANTOMS="" DISPLAY_OMIT="" KERNEL_DUMP="" GUEST_FILES="" NO_DEBUG="" HOOK=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -72,6 +72,7 @@ while [ $# -gt 0 ]; do
     --kernel-dump) KERNEL_DUMP=1; shift;;
     --guest-files) GUEST_FILES=${2:-}; shift 2;;
     --no-debug-switch) NO_DEBUG=1; shift;;
+    --startup-hook) HOOK=${2:-}; shift 2;;
     --no-bootlog) NO_BOOTLOG=1; shift;;
     --prepare-only) PREPARE=1; shift;;
     --dry-run) DRY=1; shift;;
@@ -296,6 +297,7 @@ if [ -n "$DRY" ]; then
   [ -z "$DISPLAY_PACKAGE" ] || printf 'plan: the overlay is given the package at %s, by the INF list\n' \
     "$DISPLAY_PACKAGE"
   [ -z "$GUEST_FILES" ] || printf 'plan: the overlay is given the files in %s at C:\\DBG\n' "$GUEST_FILES"
+  [ -n "$HOOK" ] && printf 'plan: the startup trigger is %s\n' "$HOOK"
   [ -z "$NO_DEBUG" ] || printf 'plan: the boot entry carries no debug switches, so a bugcheck writes its dump\n'
   [ -z "$KERNEL_DUMP" ] || printf 'plan: a bugcheck writes a kernel dump the debugger can open\n'
   [ -n "$DISPLAY_OMIT" ] && printf 'plan: the package withholds %s by request\n' "$DISPLAY_OMIT"
@@ -325,7 +327,7 @@ if [ -z "$NO_BOOTLOG" ] || [ -n "$DISPLAY_DLL" ] || [ -n "$CLASS_BINDING" ]; the
   # captures L graded were inherited or missing, and nothing could say which.
   SETTINGS=(--image "$OVERLAY" --record "$RUN")
   if [ -z "$NO_BOOTLOG" ]; then
-    SETTINGS+=(--bootlog --startup-hook "$RIG/install-channel/startup-hook.bat" --runid "$NONCE")
+    SETTINGS+=(--bootlog --startup-hook "${HOOK:-$RIG/install-channel/startup-hook.bat}" --runid "$NONCE")
   fi
   [ -z "$DISPLAY_DLL" ] || SETTINGS+=(--display-dll "$DISPLAY_DLL")
   [ -z "$CLASS_BINDING" ] || SETTINGS+=(--class-binding "$CLASS_BINDING")
