@@ -636,7 +636,7 @@ def main():
                 bad_files = []
                 for fname, digest in sorted(context.items()):
                     target = Path(MOUNT) / "DBG" / fname
-                    if not target.is_file() or sha(target) != digest:
+                    if not target.is_file() or sha(target.read_bytes()) != digest:
                         bad_files.append(fname)
                 if bad_files:
                     bad.append("these files did not read back identical: %s" % ", ".join(bad_files))
