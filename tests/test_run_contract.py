@@ -265,3 +265,17 @@ def test_the_identity_gate_names_every_binding_that_broke(tmp_path):
     for line in r.stderr.splitlines():
         if line.strip().startswith("- "):
             assert len(line) > 60, "a failure line too short to act on: %s" % line
+
+
+def test_a_bugcheck_in_the_collector_log_is_recorded_as_a_crash():
+    """Two boots bugchecked inside the display driver and their run records said the shutdown was clean.
+
+    The contract inferred a crash from how the run *ended*, and a guest that faults and reboots inside
+    the hold ends the same way a quiet one does. The detector reads the kernel's own last words, so
+    the runner has to call it and the signature has to land in the record beside the flag.
+    """
+    src = (ROOT / "run-experiment.sh").read_text()
+    assert "crash-signature.py" in src, "the runner must ask the detector rather than guess"
+    assert 'crash_suspected=true' in src, "a bugcheck has to flip the flag"
+    assert 'crash_signature=' in src, "and the signature is recorded so a reader can check the claim"
+

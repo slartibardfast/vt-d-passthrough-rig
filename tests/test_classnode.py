@@ -220,9 +220,15 @@ def test_an_incomplete_chain_is_refused_rather_than_written_silently(tmp_path):
     full = module.classnode_writes(src, binding, "0002",
                                    {"InstalledDisplayDrivers": (7, ["ati2dvag"], "inf:x.inf:1"),
                                     "VgaCompatible": (4, 0, "inf:x.inf:2")})
+    pairs = [(w[0], w[1]) for w in full]
     names = [w[1] for w in full]
     assert "InstalledDisplayDrivers" in names and "VgaCompatible" in names
-    assert len(names) == len(set(names)), "a value is written once onto one node"
+    assert len(pairs) == len(set(pairs)), "a value is written once onto one key"
+    # The same two names appear again under Settings, and that is the point: the install-time snapshot
+    # is where SetupAPI seeds the per-adapter key from, so a node without it seeds nothing.
+    settings = [w for w in full if w[0].lower().endswith("\\settings")]
+    assert {w[1] for w in settings} == {"InstalledDisplayDrivers", "VgaCompatible"}, \
+        "the snapshot carries both values, on its own key"
     with pytest.raises(module.Bad) as raised:
         module.classnode_writes(src, binding, "0002", {"VgaCompatible": (4, 0, "inf:x.inf:2")})
     assert "InstalledDisplayDrivers" in str(raised.value), raised.value

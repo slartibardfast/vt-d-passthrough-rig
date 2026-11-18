@@ -411,6 +411,16 @@ amend "ended=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "outcome=$OUTCOME" "lived_seconds=$
 # next run for the reason this script refuses one at the start.
 "$RIG/kdc-running.sh" stop || true
 
+# A bugcheck is a crash even when the machine later shuts down cleanly. The contract used to infer
+# crashes from how the run ended, so two boots whose guests double-faulted inside the display driver
+# and rebooted before the hold expired read as `measured-shutdown` with `crash_suspected=false`, while
+# their own collector logs held `*** Fatal System Error`. The kernel's last words on the debugger wire
+# decide it now, and the signature is recorded beside the flag so a reader can check it.
+if CRASH=$("$RIG/crash-signature.py" "$RUN/kdc-detached.log" 2>/dev/null); then
+  amend "crash_suspected=true" "crash_signature=$CRASH"
+  printf 'crash: the guest crashed: %s\n' "$CRASH"
+fi
+
 # The read-back. The overlay is the run's record, so it is attached read-only, on a device that is
 # free, with the format named rather than probed: reading evidence out of an image must not be able
 # to change it. Timestamps are preserved, because "is this file from this boot or inherited from
