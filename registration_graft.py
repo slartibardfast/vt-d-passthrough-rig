@@ -40,6 +40,7 @@ Usage
 Exit codes: 0 as expected, 1 not ready or write refused, 2 bad input.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -769,6 +770,133 @@ def cmd_display_mode(a):
     return 0 if ok else 1
 
 
+# ---------- the package the INF says belongs in system32 ----------
+
+# A real display install copies a set of user-mode files into system32, and the list is in the INF's
+# own `CopyFiles` groups with `DestinationDirs` naming where each goes. Placing only the display DLL
+# gives a driver that loads and then declines, because the components it pulls at enable time are not
+# there. This reads that list from the INF rather than from anybody's memory of the package.
+DEST_NAMES = {"10": "Windows", "11": "system32", "12": "system32\\drivers"}
+
+
+def sha_of(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def volume_path(root, dest_id, name):
+    """Where a destination id lands on a mounted XP volume, as real path components.
+
+    A destination id is not a path fragment: joining "WINDOWS" and "system32" with a backslash builds
+    one component whose name contains a backslash on this platform, and the files land nowhere the
+    read-back looks. The first version of this did exactly that and proved 0 of 21 files.
+    """
+    parts = ["WINDOWS"] + (["system32", "drivers"] if dest_id == "12"
+                           else [] if dest_id == "10" else ["system32"])
+    return Path(root).joinpath(*parts, name)
+
+
+def inf_section(text, name):
+    out, on = [], False
+    for raw in text.splitlines():
+        s = raw.strip()
+        if s.startswith("[") and s.endswith("]"):
+            on = s[1:-1].lower() == name.lower()
+            continue
+        if on and s and not s.startswith(";"):
+            out.append(s)
+    return out
+
+
+def inf_destinations(text):
+    dirs = {}
+    for row in inf_section(text, "DestinationDirs"):
+        if "=" in row:
+            key, value = row.split("=", 1)
+            dirs[key.strip().lower()] = value.split(";")[0].strip()
+    return dirs
+
+
+def inf_copy_plan(inf_path, section):
+    """[(source name, destination name, destination id)] for one install section's CopyFiles."""
+    text = Path(inf_path).read_text(errors="replace")
+    dirs = inf_destinations(text)
+    copy = next((r.split("=", 1)[1] for r in inf_section(text, section)
+                 if r.lower().startswith("copyfiles=")), "")
+    plan = []
+    for group in [g.strip().rstrip(";") for g in copy.split(",") if g.strip()]:
+        dest_id = dirs.get(group.lower())
+        if dest_id is None:
+            continue
+        for line in inf_section(text, group):
+            source, _, renamed = line.partition(",")
+            plan.append((source.strip(), (renamed.strip() or source.strip()), dest_id))
+    return plan
+
+
+def cmd_package(a):
+    # The install section is the one the INF's model entry names for this device, so it is read from
+    # the INF unless a caller names another one explicitly.
+    section = a.section or inf_binding(a.inf)["InfSection"]
+    plan = inf_copy_plan(a.inf, section)
+    if not plan:
+        raise Bad(f"the INF's [{a.section}] names no CopyFiles group this tool can resolve, so the "
+                  f"package it wants cannot be placed")
+    package = Path(a.package)
+    root = Path(a.root) if a.root else None
+    copied, skipped, missing = [], [], []
+    seen = set()
+    # The package is a Windows one, so its names match without regard to case; and where the INF names
+    # a source it then renames, this package ships the destination name instead. Both are read rather
+    # than treated as an omission.
+    available = {p.name.lower(): p for p in package.iterdir() if p.is_file()}
+    for source, dest_name, dest_id in plan:
+        if dest_id == "12" and not a.with_drivers:
+            skipped.append((source, "the miniport and its reminder belong on the driver volume"))
+            continue
+        if dest_id not in ("10", "11"):
+            skipped.append((dest_name, "destination %s is not this session's business" % dest_id))
+            continue
+        if dest_name.lower() in seen:
+            continue
+        seen.add(dest_name.lower())
+        src = available.get(source.lower()) or available.get(dest_name.lower())
+        if src is None:
+            missing.append(source)
+            continue
+        where = DEST_NAMES.get(dest_id, "unmapped id %s" % dest_id)
+        target = None
+        if root is not None:
+            target = volume_path(root, dest_id, dest_name)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(src.read_bytes())
+        copied.append((dest_name, dest_id, src.stat().st_size, sha_of(src)))
+    print(f"the INF's [{section}] wants {len(plan)} file(s); placing {len(copied)}")
+    for name, dest_id, size, digest in copied:
+        print("  %-22s -> %-16s %9d  %s" % (name, DEST_NAMES.get(dest_id, dest_id), size,
+                                            digest[:12]))
+    for name, why in skipped:
+        print("  skipped %-14s (%s)" % (name, why))
+    for name in missing:
+        print("  MISSING from the package: %s" % name, file=sys.stderr)
+    if missing:
+        raise Bad("the package does not carry %s, and a display install that omits part of its own "
+                  "set is the failure this step exists to prevent" % ", ".join(sorted(set(missing))))
+    if not a.apply:
+        print("print-only: nothing was copied; pass --apply with --root <mounted volume>")
+        return 0
+    if root is None:
+        raise Bad("--apply needs --root <the mounted volume root>")
+    bad = []
+    for name, dest_id, size, digest in copied:
+        target = volume_path(root, dest_id, name)
+        if not target.is_file() or sha_of(target) != digest:
+            bad.append(name)
+    print("read back: %d of %d files match their source digest" % (len(copied) - len(bad), len(copied)))
+    if bad:
+        raise Bad("these files did not read back identical: %s" % ", ".join(bad))
+    return 0
+
+
 def build_writes(src, a, drivers, vgacompat):
     """The target set, in words: bind the miniport, then make the device-facing copy agree."""
     cs, ck, vid = src["control_set"], src["class_key"], src["videoid"]
@@ -840,6 +968,18 @@ def main():
     m.add_argument("--mode", required=True, help="WIDTHxHEIGHTxBITS@REFRESH, e.g. 1024x768x32@60")
     m.add_argument("--check", action="store_true", help="report the reads and change nothing")
     m.add_argument("--apply", action="store_true", help="write the profile slot")
+    pkg = sub.add_parser("package",
+                         help="place the user-mode files the INF's CopyFiles groups name")
+    pkg.add_argument("root", nargs="?", default=None,
+                     help="the mounted volume root, for --apply")
+    pkg.add_argument("--inf", required=True, type=Path)
+    pkg.add_argument("--section", default=None,
+                     help="the INF's install section; default is the one its model entry names")
+    pkg.add_argument("--package", required=True, type=Path,
+                     help="the directory holding the package's files")
+    pkg.add_argument("--with-drivers", action="store_true",
+                     help="also place the destination-12 files, which this rig keeps on the channel")
+    pkg.add_argument("--apply", action="store_true")
     a = ap.parse_args()
     if a.cmd == "check":
         return cmd_check(a)
@@ -849,6 +989,8 @@ def main():
         return cmd_classnode(a)
     if a.cmd == "display-mode":
         return cmd_display_mode(a)
+    if a.cmd == "package":
+        return cmd_package(a)
     ap.print_help()
     return 2
 

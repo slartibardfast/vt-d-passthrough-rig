@@ -196,3 +196,53 @@ def test_the_mode_is_written_where_the_desktop_reads_it_and_to_both_entries():
             slot["DefaultSettings.BitsPerPel"], slot["DefaultSettings.VRefresh"]) == (1024, 768, 32, 60)
     mon = {w[1]: w[3] for w in writes if w[0].endswith("Mon12345678")}
     assert mon["DefaultSettings.YResolution"] == 768, "so a reader of either entry sees one mode"
+
+
+PACKAGE_INF = textwrap.dedent("""
+    [DestinationDirs]
+    DefaultDestDir      = 11
+    ati2mtag.Miniport   = 12  ; drivers
+    ati2mtag.Display    = 11  ; system32
+    ati2mtag.OGL        = 10  ; Windows
+
+    [ati2mtag_Kaveri_Desktop]
+    CopyFiles=ati2mtag.Miniport, ati2mtag.Display, ati2mtag.OGL
+
+    [ati2mtag.Miniport]
+    ati2mtag.sys
+    ati2erec.dll
+
+    [ati2mtag.Display]
+    ati2dvag.dll
+    ati2cqag.dll
+    atiicdxx.dat
+    amdpcom64.dll,atimpc64.dll
+
+    [ati2mtag.OGL]
+    atiogl.xml
+""")
+
+
+def test_the_package_list_is_read_from_the_inf_and_names_the_companions(tmp_path):
+    """The hand install copied the display DLL and nothing else, which is a partial package."""
+    inf = tmp_path / "package.inf"
+    inf.write_text(PACKAGE_INF)
+    plan = rg.inf_copy_plan(inf, "ati2mtag_Kaveri_Desktop")
+    dests = {(src.lower(), dest.lower(), dst) for src, dest, dst in plan}
+    assert ("ati2dvag.dll", "ati2dvag.dll", "11") in dests
+    assert ("ati2cqag.dll", "ati2cqag.dll", "11") in dests, "the 2D component the driver pulls"
+    assert ("atiicdxx.dat", "atiicdxx.dat", "11") in dests
+    assert ("ati2mtag.sys", "ati2mtag.sys", "12") in dests, "the miniport goes to drivers"
+    assert ("atiogl.xml", "atiogl.xml", "10") in dests, "a Windows-destination file is not system32"
+    assert ("amdpcom64.dll", "atimpc64.dll", "11") in dests, "a renamed copy is still a destination"
+
+
+def test_a_destination_id_is_a_place_on_the_volume_not_a_path_fragment():
+    from pathlib import Path as P
+
+    root = P("/mnt/vol")
+    assert rg.volume_path(root, "11", "ati2cqag.dll") == root / "WINDOWS" / "system32" / "ati2cqag.dll"
+    assert rg.volume_path(root, "10", "atiogl.xml") == root / "WINDOWS" / "atiogl.xml"
+    assert rg.volume_path(root, "12", "ati2mtag.sys") == \
+        root / "WINDOWS" / "system32" / "drivers" / "ati2mtag.sys", \
+        "a backslash inside one component lands nowhere the read-back looks"

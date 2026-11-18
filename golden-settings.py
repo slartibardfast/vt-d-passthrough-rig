@@ -233,6 +233,14 @@ def main():
                     help="the mode the attached display opens its desktop at, for example "
                          "1024x768x32@60; written to the hardware profile, which is where the mode a "
                          "desktop opens at lives")
+    ap.add_argument("--display-inf", type=Path, default=None, metavar="INF",
+                    help="the INF whose CopyFiles list names the package's files; defaults to the "
+                         "--class-binding INF, and is separate so a package can be placed without "
+                         "also rebinding the class node in the same boot")
+    ap.add_argument("--display-package", type=Path, default=None, metavar="DIR",
+                    help="place the user-mode files the INF's CopyFiles groups name, reading the list "
+                         "from the INF given to --class-binding; a display install that copies only "
+                         "the display DLL gives a driver that loads and declines")
     ap.add_argument("--class-key", default=None, metavar="NNNN",
                     help="the Display class subkey to write; without it the binding goes to a fresh "
                          "node, and with it the node the device already uses is rewritten in place")
@@ -242,7 +250,7 @@ def main():
     if not a.image.is_file():
         raise Bad("no such image: %s" % a.image)
     actions = [x for x in (a.bootlog, a.startup_hook, a.runid, a.display_dll, a.class_binding,
-                           a.display_mode) if x]
+                           a.class_key, a.display_mode, a.display_package, a.display_inf) if x]
     if not actions:
         # A bare --check would report nothing at all and exit 0, which reads as a clean answer to a
         # question nobody asked. Naming the setting is the question.
@@ -258,6 +266,15 @@ def main():
             raise Bad("the display DLL must be named like a driver DLL, got %s" % a.display_dll.name)
     if a.class_binding and not a.class_binding.is_file():
         raise Bad("no INF to bind the class node from: %s" % a.class_binding)
+    if a.display_package:
+        if not a.display_package.is_dir():
+            raise Bad("no package directory at %s; it must hold the files the INF names" % a.display_package)
+        if not (a.display_inf or a.class_binding):
+            raise Bad("--display-package needs --display-inf <inf> (or --class-binding, which implies "
+                      "it): the INF is where the list of files and their destinations is written, "
+                      "and guessing it is how a partial install happens")
+    if a.display_inf and not a.display_inf.is_file():
+        raise Bad("no INF to read the package list from: %s" % a.display_inf)
     if a.runid and not re.fullmatch(r"[A-Za-z0-9._-]{4,64}", a.runid):
         raise Bad("the run id must be a plain token of letters, digits, dot, dash or underscore")
     a_quiet_host()
@@ -414,6 +431,21 @@ def main():
                               % ((r.stdout + r.stderr).strip()[:400] or "no output"))
                 expected["class-binding"] = ("bound", str(a.class_binding), None)
 
+        if a.display_package:
+            hive_inf = a.display_inf or a.class_binding
+            call = [sys.executable, str(RIG / "registration_graft.py"), "package", str(MOUNT),
+                    "--inf", str(hive_inf), "--package", str(a.display_package)]
+            if not a.check:
+                call.append("--apply")
+            r = subprocess.run([str(c) for c in ["sudo"] + call], capture_output=True, text=True)
+            keep = ("wants", "->", "read back", "skipped", "MISSING")
+            sys.stdout.write("".join(l + "\n" for l in (r.stdout + r.stderr).splitlines()
+                                     if any(k in l for k in keep)))
+            if r.returncode != 0:
+                raise Bad("the display package was not placed: %s"
+                          % ((r.stdout + r.stderr).strip()[:400] or "no output"))
+            expected["display-package"] = ("package", str(a.display_package), None)
+
         if a.display_mode:
             hive = find(MOUNT, SYSTEM_HIVE)
             if hive is None:
@@ -492,6 +524,17 @@ def main():
                                % (tail[-1] if tail else (r.stdout + r.stderr).strip()[:160]))
                 else:
                     print("read back class-binding: %s" % (tail[-1] if tail else "BOUND"))
+            elif name == "display-package":
+                call = [sys.executable, str(RIG / "registration_graft.py"), "package", str(MOUNT),
+                        "--inf", str(a.display_inf or a.class_binding),
+                        "--package", str(a.display_package)]
+                r = subprocess.run([str(c) for c in ["sudo"] + call], capture_output=True, text=True)
+                tail = [l for l in (r.stdout + r.stderr).splitlines() if "read back" in l]
+                if r.returncode != 0:
+                    bad.append("the display package did not read back: %s"
+                               % (tail[-1] if tail else (r.stdout + r.stderr).strip()[:160]))
+                else:
+                    print("read back display-package: %s" % (tail[-1] if tail else "placed"))
             elif name == "display-mode":
                 hive = find(MOUNT, SYSTEM_HIVE)
                 r = subprocess.run([str(c) for c in ["sudo", sys.executable,
