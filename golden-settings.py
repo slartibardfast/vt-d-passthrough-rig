@@ -254,6 +254,10 @@ def main():
     ap.add_argument("--guest-files", type=Path, default=None, metavar="DIR",
                     help="copy every file in DIR into the guest's C:\\DBG, recording each hash and "
                          "proving each from a second mount; the XP-generation debugger is placed this way")
+    ap.add_argument("--no-debug-switch", action="store_true",
+                    help="strip /debug and /debugport from the default boot entry, so a bugcheck writes "
+                         "its dump with no debugger attached; a debugger that holds the target stops the "
+                         "kernel before the write, and two runs measured that")
     ap.add_argument("--kernel-dump", action="store_true",
                     help="make a bugcheck write a kernel dump, which is what a debugger needs to walk "
                          "the thread that never returned; the guest asks only for a small dump today")
@@ -265,7 +269,7 @@ def main():
     actions = [x for x in (a.bootlog, a.startup_hook, a.runid, a.display_dll, a.class_binding,
                            a.class_key, a.display_mode, a.display_package, a.display_inf,
                            a.drop_phantom_monitors, a.display_omit, a.kernel_dump,
-                           a.guest_files) if x]
+                           a.guest_files, a.no_debug_switch) if x]
     if not actions:
         # A bare --check would report nothing at all and exit 0, which reads as a clean answer to a
         # question nobody asked. Naming the setting is the question.
@@ -322,6 +326,30 @@ def main():
                 updated = text.replace(hits[0], hits[0].rstrip() + " /bootlog", 1)
                 write(path, updated.encode("latin-1"))
                 expected["boot.ini"] = ("in", "/bootlog", None)
+
+        if a.no_debug_switch:
+            path, text = read_boot_ini(MOUNT)
+            entries = entry_lines(text)
+            want = default_path(text)
+            hits = [e for e in entries if e.split("=", 1)[0].strip().lower() == want]
+            if len(hits) != 1:
+                raise Bad("the default entry matched %d lines; refusing to guess which one boots"
+                          % len(hits))
+            line = hits[0]
+            stripped = re.sub(r"\s*/debug(port)?=\S+", "", line, flags=re.I)
+            stripped = re.sub(r"\s*/debug\b", "", stripped, flags=re.I)
+            if a.check:
+                print("default entry: %s" % line.strip())
+                print("debug switches: %s" % ("present" if stripped != line else "absent"))
+                if stripped != line:
+                    missing.append("no-debug-switch")
+            elif stripped == line:
+                report("already set", entries)
+            else:
+                print("default entry was: %s" % line.strip())
+                write(path, text.replace(line, stripped, 1).encode("latin-1"))
+                print("default entry now: %s" % stripped.strip())
+                expected["no-debug-switch"] = ("absent", "/debug", None)
 
         if a.startup_hook:
             want_hook = a.startup_hook.read_bytes()
