@@ -342,3 +342,23 @@ def test_a_file_the_inf_names_can_be_withheld_and_the_omission_is_reported(tmp_p
     assert rg.cmd_package(args) == 0
     assert not (root / "WINDOWS" / "system32" / "ati2cqag.dll").exists(), "the withheld file is absent"
     assert (root / "WINDOWS" / "system32" / "ati2dvag.dll").exists(), "the rest of the package lands"
+
+
+def test_the_dump_mode_is_set_from_the_guest_and_graded_back(tmp_path):
+    """A dump the debugger cannot open is a boot spent for nothing, so the mode is graded, not set."""
+    import shutil
+
+    import pytest as _pytest
+
+    if rg.hivex is None:
+        _pytest.skip("reading a hive needs the system Python's hivex, not the rig venv")
+    rig = Path(__file__).resolve().parent.parent
+    source = rig / "work" / "runs" / "desktop14" / "evidence" / "WINDOWS" / "system32" / "config" / "system"
+    if not source.is_file():
+        _pytest.skip("the collected hive is not on this machine")
+    hive = tmp_path / "system"
+    shutil.copy2(source, hive)
+    args = SimpleNamespace(hive=str(hive), mode="kernel", check=False, apply=True)
+    assert rg.cmd_crash_dump(args) == 0
+    grade = SimpleNamespace(hive=str(hive), mode="kernel", check=True, apply=False)
+    assert rg.cmd_crash_dump(grade) == 0, "the mode reads back as the one asked for"

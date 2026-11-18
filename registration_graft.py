@@ -972,6 +972,56 @@ def cmd_phantom_monitors(a):
     return 0 if not after else 1
 
 
+# ---------- the crash dump ----------
+
+# A bugcheck writes a dump only if it is told to, and the guest's own CrashControl asks for a small
+# dump (mode 3), which carries the bugcheck parameters and no kernel memory. Modes: 0 none, 1 complete,
+# 2 kernel, 3 small. A kernel dump holds the loaded images and the kernel pages, which is what a
+# debugger needs to walk a thread that never returned.
+DUMP_MODES = {"none": 0, "complete": 1, "kernel": 2, "small": 3}
+
+
+def cmd_crash_dump(a):
+    if a.mode not in DUMP_MODES:
+        raise Bad("%r is not a dump mode; use one of %s" % (a.mode, ", ".join(DUMP_MODES)))
+    h = open_hive(a.hive, write=a.apply)
+    cs = current_control_set(h)
+    path = f"{cs}\\Control\\CrashControl"
+    node = descend(h, path.split("\\"))
+    before = {k: decode(h, v) for k, v in (value_map(h, node) or {}).items()}
+    print("CrashControl now: %s" % before)
+    writes = [
+        ("CrashDumpEnabled", DUMP_MODES[a.mode], "the dump kind the debugger needs"),
+        ("DumpFile", "%SystemRoot%\\MEMORY.DMP", "where the dump lands"),
+        ("Overwrite", 1, "a second bugcheck must not be refused for lack of a name"),
+        ("AlwaysKeepMemoryDump", 1, "keep it even when the volume is tight"),
+        ("AutoReboot", 1, "reboot after the dump is written, so the run can end"),
+    ]
+    print("writes: %d value(s), mode %s (%d)" % (len(writes), a.mode, DUMP_MODES[a.mode]))
+    for name, value, why in writes:
+        print("   %-22s %r  (%s)" % (name, value, why))
+    if a.check:
+        ok = before.get("crashdumpenabled") == DUMP_MODES[a.mode]
+        print("verdict: %s" % ("DUMP-%s" % a.mode.upper() if ok else "DUMP-NOT-%s" % a.mode.upper()))
+        return 0 if ok else 1
+    if not a.apply:
+        print("print-only: nothing written; pass --apply, or --check to grade the hive")
+        return 0
+    for name, value, _why in writes:
+        typ = REG_SZ if isinstance(value, str) else REG_DWORD
+        h.node_set_value(node, {"key": name, "t": typ, "length": len(encode(typ, value)),
+                                "value": encode(typ, value)})
+    h.commit(a.hive)
+    reread = open_hive(a.hive)
+    after = {k: decode(reread, v) for k, v in
+             (value_map(reread, descend(reread, path.split("\\"))) or {}).items()}
+    print("read back: CrashDumpEnabled=%s DumpFile=%s"
+          % (after.get("crashdumpenabled"), after.get("dumpfile")))
+    ok = after.get("crashdumpenabled") == DUMP_MODES[a.mode]
+    print("verdict: %s" % ("DUMP-%s" % a.mode.upper() if ok else "DUMP-NOT-%s" % a.mode.upper()))
+    return 0 if ok else 1
+
+
 def build_writes(src, a, drivers, vgacompat):
     """The target set, in words: bind the miniport, then make the device-facing copy agree."""
     cs, ck, vid = src["control_set"], src["class_key"], src["videoid"]
@@ -1066,6 +1116,12 @@ def main():
     ph.add_argument("hive")
     ph.add_argument("--check", action="store_true", help="grade the hive, change nothing")
     ph.add_argument("--apply", action="store_true", help="delete the Default_Monitor key")
+    cd = sub.add_parser("crash-dump", help="set what kind of dump a bugcheck writes")
+    cd.add_argument("hive")
+    cd.add_argument("--mode", default="kernel", choices=sorted(DUMP_MODES),
+                    help="none, complete, kernel or small (default kernel)")
+    cd.add_argument("--check", action="store_true", help="grade the hive, change nothing")
+    cd.add_argument("--apply", action="store_true", help="write the CrashControl values")
     a = ap.parse_args()
     if a.cmd == "check":
         return cmd_check(a)
@@ -1079,6 +1135,8 @@ def main():
         return cmd_package(a)
     if a.cmd == "phantom-monitors":
         return cmd_phantom_monitors(a)
+    if a.cmd == "crash-dump":
+        return cmd_crash_dump(a)
     ap.print_help()
     return 2
 

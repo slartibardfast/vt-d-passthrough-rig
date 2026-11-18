@@ -251,6 +251,9 @@ def main():
                     help="delete the Default_Monitor devices that carry no EDID, leaving PnP the "
                          "monitors that do advertise modes; the driver can only offer modes its "
                          "attached monitor names")
+    ap.add_argument("--kernel-dump", action="store_true",
+                    help="make a bugcheck write a kernel dump, which is what a debugger needs to walk "
+                         "the thread that never returned; the guest asks only for a small dump today")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--record", type=Path, default=None)
     a = ap.parse_args()
@@ -258,7 +261,7 @@ def main():
         raise Bad("no such image: %s" % a.image)
     actions = [x for x in (a.bootlog, a.startup_hook, a.runid, a.display_dll, a.class_binding,
                            a.class_key, a.display_mode, a.display_package, a.display_inf,
-                           a.drop_phantom_monitors, a.display_omit) if x]
+                           a.drop_phantom_monitors, a.display_omit, a.kernel_dump) if x]
     if not actions:
         # A bare --check would report nothing at all and exit 0, which reads as a clean answer to a
         # question nobody asked. Naming the setting is the question.
@@ -481,6 +484,29 @@ def main():
                               % ((r.stdout + r.stderr).strip()[-300:] or "no output"))
                 expected["phantom-monitors"] = ("phantom", "absent", None)
 
+        if a.kernel_dump:
+            hive = find(MOUNT, SYSTEM_HIVE)
+            if hive is None:
+                raise Bad("no %s on the volume, so there is no CrashControl to set" % SYSTEM_HIVE)
+            call = [sys.executable, str(RIG / "registration_graft.py"), "crash-dump", str(hive),
+                    "--mode", "kernel"]
+            if a.check:
+                r = subprocess.run([str(c) for c in ["sudo"] + call + ["--check"]],
+                                   capture_output=True, text=True)
+                tail = [l for l in (r.stdout + r.stderr).splitlines() if "verdict" in l]
+                print("kernel-dump: %s" % (tail[-1] if tail else (r.stdout + r.stderr).strip()[:120]))
+                if r.returncode != 0:
+                    missing.append("kernel-dump")
+            else:
+                r = subprocess.run([str(c) for c in ["sudo"] + call + ["--apply"]],
+                                   capture_output=True, text=True)
+                keep = ("CrashControl now", "writes", "read back", "verdict")
+                sys.stdout.write("".join(l + "\n" for l in (r.stdout + r.stderr).splitlines()
+                                         if any(k in l for k in keep)))
+                if r.returncode != 0:
+                    raise Bad("the dump mode was not set: %s" % ((r.stdout + r.stderr).strip()[-300:]))
+                expected["kernel-dump"] = ("dump", "kernel", None)
+
         if a.display_mode:
             hive = find(MOUNT, SYSTEM_HIVE)
             if hive is None:
@@ -572,6 +598,18 @@ def main():
                                % (tail[-1] if tail else (r.stdout + r.stderr).strip()[-300:]))
                 else:
                     print("read back display-package: %s" % (tail[-1] if tail else "PACKAGE-PLACED"))
+            elif name == "kernel-dump":
+                hive = find(MOUNT, SYSTEM_HIVE)
+                r = subprocess.run([str(c) for c in ["sudo", sys.executable,
+                                                     str(RIG / "registration_graft.py"), "crash-dump",
+                                                     str(hive), "--mode", "kernel", "--check"]],
+                                   capture_output=True, text=True)
+                tail = [l for l in (r.stdout + r.stderr).splitlines() if "verdict" in l]
+                if r.returncode != 0:
+                    bad.append("the dump mode is not kernel after the write: %s"
+                               % (tail[-1] if tail else (r.stdout + r.stderr).strip()[-200:]))
+                else:
+                    print("read back kernel-dump: %s" % (tail[-1] if tail else "DUMP-KERNEL"))
             elif name == "phantom-monitors":
                 hive = find(MOUNT, SYSTEM_HIVE)
                 r = subprocess.run([str(c) for c in ["sudo", sys.executable,
