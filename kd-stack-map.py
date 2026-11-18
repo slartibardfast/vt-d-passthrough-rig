@@ -53,12 +53,23 @@ def frames(stack, start, table):
     return out
 
 
+def load_unwinder(path):
+    """The frame-layout reader, imported by path because the tool's name has a hyphen."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("kd_unwind", str(path))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="kd-stack-map.py")
     ap.add_argument("--stack", required=True, type=Path, help="the dumped stack bytes")
     ap.add_argument("--start", required=True, help="the address the dump begins at")
     ap.add_argument("--image", action="append", default=[], metavar="BASE=PATH",
                     help="an image as the boot mapped it, with the file it came from")
+    ap.add_argument("--functions", action="store_true",
+                    help="name the function each frame falls in, using the image's own .pdata")
     a = ap.parse_args(argv)
     table = image_table(a.image)
     print("images, bounded by their own SizeOfImage:")
@@ -69,9 +80,28 @@ def main(argv=None):
     if not got:
         print("\nno pointer on this stack falls inside a named image")
         return 1
+    unwinder = None
+    if a.functions:
+        unwinder = load_unwinder(Path(__file__).resolve().parent / "kd-unwind.py")
     print("\nframes, most recent first (a stack grows down, so the lowest address is the latest):")
     for addr, name, off in got:
-        print("   stack+0x%05X  %s+0x%05X" % (addr - start, name, off))
+        detail = ""
+        if unwinder is not None:
+            paths = {}
+            for entry in a.image:
+                _base, _, _path = entry.partition("=")
+                paths[Path(_path).name] = _path
+            image_path = paths[name]
+            img = unwinder.Image(image_path)
+            placed = img.function_at(off)
+            if placed:
+                begin, end, unwind = placed
+                ui = unwinder.unwind_info(img, unwind)
+                detail = "  in function 0x%05X (frame 0x%X)" % (
+                    begin, unwinder.frame_size(ui) if ui else 0)
+            else:
+                detail = "  outside every .pdata entry"
+        print("   stack+0x%05X  %s+0x%05X%s" % (addr - start, name, off, detail))
     return 0
 
 
