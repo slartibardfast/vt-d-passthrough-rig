@@ -494,7 +494,7 @@ def main():
             wanted = sorted(q for q in a.guest_files.iterdir() if q.is_file())
             if not wanted:
                 raise Bad("%s holds no files to place" % a.guest_files)
-            target_dir = MOUNT / "DBG"
+            target_dir = Path(MOUNT) / "DBG"
             target_dir.mkdir(parents=True, exist_ok=True)
             placed = {}
             for src in wanted:
@@ -635,7 +635,7 @@ def main():
             elif name == "guest-files":
                 bad_files = []
                 for fname, digest in sorted(context.items()):
-                    target = MOUNT / "DBG" / fname
+                    target = Path(MOUNT) / "DBG" / fname
                     if not target.is_file() or sha(target) != digest:
                         bad_files.append(fname)
                 if bad_files:
