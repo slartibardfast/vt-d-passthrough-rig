@@ -258,6 +258,9 @@ def main():
                     help="strip /debug and /debugport from the default boot entry, so a bugcheck writes "
                          "its dump with no debugger attached; a debugger that holds the target stops the "
                          "kernel before the write, and two runs measured that")
+    ap.add_argument("--dump-mode", default="kernel", choices=("kernel", "complete", "small"),
+                    help="which dump a bugcheck writes; a complete dump also needs a pagefile at least "
+                         "the size of RAM, which this sets")
     ap.add_argument("--kernel-dump", action="store_true",
                     help="make a bugcheck write a kernel dump, which is what a debugger needs to walk "
                          "the thread that never returned; the guest asks only for a small dump today")
@@ -539,7 +542,7 @@ def main():
             if hive is None:
                 raise Bad("no %s on the volume, so there is no CrashControl to set" % SYSTEM_HIVE)
             call = [sys.executable, str(RIG / "registration_graft.py"), "crash-dump", str(hive),
-                    "--mode", "kernel"]
+                    "--mode", a.dump_mode]
             if a.check:
                 r = subprocess.run([str(c) for c in ["sudo"] + call + ["--check"]],
                                    capture_output=True, text=True)

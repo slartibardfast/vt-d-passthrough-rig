@@ -49,7 +49,7 @@ set -uo pipefail
 
 RIG=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 GOLDEN="" CHANNEL="" NAME="" RUNS="$RIG/work/runs" TIMEOUT=600 PREPARE="" DRY="" TREE=""
-HOLD=240 NO_BOOTLOG="" DEST="" FORCE="" DISPLAY_DLL="" CLASS_BINDING="" CLASS_KEY="" DISPLAY_MODE="" DISPLAY_PACKAGE="" DISPLAY_INF="" DROP_PHANTOMS="" DISPLAY_OMIT="" KERNEL_DUMP="" GUEST_FILES="" NO_DEBUG="" HOOK=""
+HOLD=240 NO_BOOTLOG="" DEST="" FORCE="" DISPLAY_DLL="" CLASS_BINDING="" CLASS_KEY="" DISPLAY_MODE="" DISPLAY_PACKAGE="" DISPLAY_INF="" DROP_PHANTOMS="" DISPLAY_OMIT="" KERNEL_DUMP="" GUEST_FILES="" NO_DEBUG="" HOOK="" DUMP_MODE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -73,6 +73,7 @@ while [ $# -gt 0 ]; do
     --guest-files) GUEST_FILES=${2:-}; shift 2;;
     --no-debug-switch) NO_DEBUG=1; shift;;
     --startup-hook) HOOK=${2:-}; shift 2;;
+    --dump-mode) DUMP_MODE=${2:-}; shift 2;;
     --no-bootlog) NO_BOOTLOG=1; shift;;
     --prepare-only) PREPARE=1; shift;;
     --dry-run) DRY=1; shift;;
@@ -337,6 +338,7 @@ if [ -z "$NO_BOOTLOG" ] || [ -n "$DISPLAY_DLL" ] || [ -n "$CLASS_BINDING" ]; the
   [ -z "$DISPLAY_INF" ] || SETTINGS+=(--display-inf "$DISPLAY_INF")
   [ -z "$DROP_PHANTOMS" ] || SETTINGS+=(--drop-phantom-monitors)
   [ -z "$KERNEL_DUMP" ] || SETTINGS+=(--kernel-dump)
+  [ -z "$DUMP_MODE" ] || SETTINGS+=(--dump-mode "$DUMP_MODE")
   [ -z "$GUEST_FILES" ] || SETTINGS+=(--guest-files "$GUEST_FILES")
   [ -z "$NO_DEBUG" ] || SETTINGS+=(--no-debug-switch)
   if [ -n "$DISPLAY_OMIT" ]; then

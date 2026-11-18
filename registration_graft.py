@@ -997,6 +997,10 @@ def cmd_crash_dump(a):
         ("AlwaysKeepMemoryDump", 1, "keep it even when the volume is tight"),
         ("AutoReboot", 1, "reboot after the dump is written, so the run can end"),
     ]
+    pagefile = None
+    if a.mode == "complete":
+        pagefile = a.pagefile_mb
+        print("a complete dump needs a pagefile at least as large as RAM: setting %d MB" % pagefile)
     print("writes: %d value(s), mode %s (%d)" % (len(writes), a.mode, DUMP_MODES[a.mode]))
     for name, value, why in writes:
         print("   %-22s %r  (%s)" % (name, value, why))
@@ -1007,6 +1011,16 @@ def cmd_crash_dump(a):
     if not a.apply:
         print("print-only: nothing written; pass --apply, or --check to grade the hive")
         return 0
+    if pagefile is not None:
+        mm = descend(h, [cs, "Control", "Session Manager", "Memory Management"])
+        cur = value_map(h, mm).get("pagingfiles")
+        print("   PagingFiles now: %s" % (decode(h, cur) if cur else "(absent)"))
+        h.node_set_value(mm, {"key": "PagingFiles", "t": REG_MULTI_SZ,
+                              "length": len(encode(REG_MULTI_SZ, ["C:\\pagefile.sys %d %d"
+                                                                  % (pagefile, pagefile)])),
+                              "value": encode(REG_MULTI_SZ, ["C:\\pagefile.sys %d %d"
+                                                             % (pagefile, pagefile)])})
+        writes.append(("PagingFiles", "%d MB" % pagefile, "a complete dump needs room to land"))
     for name, value, _why in writes:
         typ = REG_SZ if isinstance(value, str) else REG_DWORD
         h.node_set_value(node, {"key": name, "t": typ, "length": len(encode(typ, value)),
@@ -1118,6 +1132,8 @@ def main():
     ph.add_argument("--apply", action="store_true", help="delete the Default_Monitor key")
     cd = sub.add_parser("crash-dump", help="set what kind of dump a bugcheck writes")
     cd.add_argument("hive")
+    cd.add_argument("--pagefile-mb", type=int, default=4096,
+                    help="pagefile size to set with a complete dump; must exceed RAM")
     cd.add_argument("--mode", default="kernel", choices=sorted(DUMP_MODES),
                     help="none, complete, kernel or small (default kernel)")
     cd.add_argument("--check", action="store_true", help="grade the hive, change nothing")
