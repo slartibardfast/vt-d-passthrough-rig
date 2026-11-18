@@ -251,6 +251,9 @@ def main():
                     help="delete the Default_Monitor devices that carry no EDID, leaving PnP the "
                          "monitors that do advertise modes; the driver can only offer modes its "
                          "attached monitor names")
+    ap.add_argument("--guest-files", type=Path, default=None, metavar="DIR",
+                    help="copy every file in DIR into the guest's C:\\DBG, recording each hash and "
+                         "proving each from a second mount; the XP-generation debugger is placed this way")
     ap.add_argument("--kernel-dump", action="store_true",
                     help="make a bugcheck write a kernel dump, which is what a debugger needs to walk "
                          "the thread that never returned; the guest asks only for a small dump today")
@@ -261,7 +264,8 @@ def main():
         raise Bad("no such image: %s" % a.image)
     actions = [x for x in (a.bootlog, a.startup_hook, a.runid, a.display_dll, a.class_binding,
                            a.class_key, a.display_mode, a.display_package, a.display_inf,
-                           a.drop_phantom_monitors, a.display_omit, a.kernel_dump) if x]
+                           a.drop_phantom_monitors, a.display_omit, a.kernel_dump,
+                           a.guest_files) if x]
     if not actions:
         # A bare --check would report nothing at all and exit 0, which reads as a clean answer to a
         # question nobody asked. Naming the setting is the question.
@@ -484,6 +488,24 @@ def main():
                               % ((r.stdout + r.stderr).strip()[-300:] or "no output"))
                 expected["phantom-monitors"] = ("phantom", "absent", None)
 
+        if a.guest_files:
+            if not a.guest_files.is_dir():
+                raise Bad("no directory of guest files at %s" % a.guest_files)
+            wanted = sorted(q for q in a.guest_files.iterdir() if q.is_file())
+            if not wanted:
+                raise Bad("%s holds no files to place" % a.guest_files)
+            target_dir = MOUNT / "DBG"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            placed = {}
+            for src in wanted:
+                dst = target_dir / src.name
+                dst.write_bytes(src.read_bytes())
+                placed[src.name] = sha(src)
+            for name, digest in sorted(placed.items()):
+                print("placed %-14s %s bytes -> C:\\DBG  %s"
+                      % (name, (a.guest_files / name).stat().st_size, digest[:12]))
+            expected["guest-files"] = ("files", str(a.guest_files), placed)
+
         if a.kernel_dump:
             hive = find(MOUNT, SYSTEM_HIVE)
             if hive is None:
@@ -610,6 +632,16 @@ def main():
                                % (tail[-1] if tail else (r.stdout + r.stderr).strip()[-200:]))
                 else:
                     print("read back kernel-dump: %s" % (tail[-1] if tail else "DUMP-KERNEL"))
+            elif name == "guest-files":
+                bad_files = []
+                for fname, digest in sorted(context.items()):
+                    target = MOUNT / "DBG" / fname
+                    if not target.is_file() or sha(target) != digest:
+                        bad_files.append(fname)
+                if bad_files:
+                    bad.append("these files did not read back identical: %s" % ", ".join(bad_files))
+                else:
+                    print("read back guest-files: %d file(s) in C:\\DBG" % len(context))
             elif name == "phantom-monitors":
                 hive = find(MOUNT, SYSTEM_HIVE)
                 r = subprocess.run([str(c) for c in ["sudo", sys.executable,
