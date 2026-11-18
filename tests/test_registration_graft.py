@@ -7,6 +7,7 @@ line that it is not.
 """
 
 import textwrap
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -282,3 +283,37 @@ def test_a_check_writes_nothing_and_a_placement_is_then_placed(tmp_path):
     assert not (root / "WINDOWS" / "system32" / "ati2mtag.sys").exists(), \
         "the miniport stays on the driver volume"
     assert call(check=True) == 0
+
+
+def test_the_phantom_monitors_are_removed_and_the_real_ones_survive(tmp_path):
+    """The guest carries a Default_Monitor with bad_edid beside two monitors that advertise modes.
+
+    A display driver can only offer modes its attached monitor names, and the campaign's own record
+    calls the no-EDID shape the phantom-head defect. Deleting the family is the delta; the monitors
+    that do advertise modes have to survive it.
+    """
+    import shutil
+
+    import pytest as _pytest
+
+    if rg.hivex is None:
+        _pytest.skip("reading a hive needs the system Python's hivex, not the rig venv")
+    rig = Path(__file__).resolve().parent.parent
+    source = rig / "work" / "runs" / "desktop9" / "evidence" / "WINDOWS" / "system32" / "config" / "system"
+    if not source.is_file():
+        _pytest.skip("the desktop9 hive is not on this machine")
+    hive = tmp_path / "system"
+    shutil.copy2(source, hive)
+
+    before = rg.open_hive(hive)
+    present = [name for name, _bad in rg.phantom_monitors(before)]
+    assert present, "the fixture must start with phantoms or the test proves nothing"
+
+    args = SimpleNamespace(hive=str(hive), check=False, apply=True)
+    assert rg.cmd_phantom_monitors(args) == 0
+    after = rg.open_hive(hive)
+    assert rg.phantom_monitors(after) == [], "the no-EDID family is gone"
+    cs = rg.current_control_set(after)
+    disp = rg.descend(after, [cs, "Enum", "DISPLAY"])
+    survivors = [after.node_name(c) for c in (after.node_children(disp) or [])]
+    assert "GLIC21C" in survivors and "RHT1234" in survivors, survivors

@@ -244,13 +244,18 @@ def main():
     ap.add_argument("--class-key", default=None, metavar="NNNN",
                     help="the Display class subkey to write; without it the binding goes to a fresh "
                          "node, and with it the node the device already uses is rewritten in place")
+    ap.add_argument("--drop-phantom-monitors", action="store_true",
+                    help="delete the Default_Monitor devices that carry no EDID, leaving PnP the "
+                         "monitors that do advertise modes; the driver can only offer modes its "
+                         "attached monitor names")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--record", type=Path, default=None)
     a = ap.parse_args()
     if not a.image.is_file():
         raise Bad("no such image: %s" % a.image)
     actions = [x for x in (a.bootlog, a.startup_hook, a.runid, a.display_dll, a.class_binding,
-                           a.class_key, a.display_mode, a.display_package, a.display_inf) if x]
+                           a.class_key, a.display_mode, a.display_package, a.display_inf,
+                           a.drop_phantom_monitors) if x]
     if not actions:
         # A bare --check would report nothing at all and exit 0, which reads as a clean answer to a
         # question nobody asked. Naming the setting is the question.
@@ -446,6 +451,29 @@ def main():
                           % ((r.stdout + r.stderr).strip()[:400] or "no output"))
             expected["display-package"] = ("package", str(a.display_package), None)
 
+        if a.drop_phantom_monitors:
+            hive = find(MOUNT, SYSTEM_HIVE)
+            if hive is None:
+                raise Bad("no %s on the volume, so there is no monitor key to read" % SYSTEM_HIVE)
+            call = [sys.executable, str(RIG / "registration_graft.py"), "phantom-monitors", str(hive)]
+            if a.check:
+                r = subprocess.run([str(c) for c in ["sudo"] + call + ["--check"]],
+                                   capture_output=True, text=True)
+                tail = [l for l in (r.stdout + r.stderr).splitlines() if "verdict" in l]
+                print("phantom-monitors: %s" % (tail[-1] if tail else (r.stdout + r.stderr).strip()[:120]))
+                if r.returncode != 0:
+                    missing.append("phantom-monitors")
+            else:
+                r = subprocess.run([str(c) for c in ["sudo"] + call + ["--apply"]],
+                                   capture_output=True, text=True)
+                keep = ("instance(s)", "removed", "read back", "verdict")
+                sys.stdout.write("".join(l + "\n" for l in (r.stdout + r.stderr).splitlines()
+                                         if any(k in l for k in keep)))
+                if r.returncode != 0:
+                    raise Bad("the phantom monitors were not removed: %s"
+                              % ((r.stdout + r.stderr).strip()[-300:] or "no output"))
+                expected["phantom-monitors"] = ("phantom", "absent", None)
+
         if a.display_mode:
             hive = find(MOUNT, SYSTEM_HIVE)
             if hive is None:
@@ -535,6 +563,18 @@ def main():
                                % (tail[-1] if tail else (r.stdout + r.stderr).strip()[-300:]))
                 else:
                     print("read back display-package: %s" % (tail[-1] if tail else "PACKAGE-PLACED"))
+            elif name == "phantom-monitors":
+                hive = find(MOUNT, SYSTEM_HIVE)
+                r = subprocess.run([str(c) for c in ["sudo", sys.executable,
+                                                     str(RIG / "registration_graft.py"),
+                                                     "phantom-monitors", str(hive), "--check"]],
+                                   capture_output=True, text=True)
+                tail = [l for l in (r.stdout + r.stderr).splitlines() if "verdict" in l]
+                if r.returncode != 0:
+                    bad.append("the phantom monitor key is present after the write: %s"
+                               % (tail[-1] if tail else (r.stdout + r.stderr).strip()[-200:]))
+                else:
+                    print("read back phantom-monitors: %s" % (tail[-1] if tail else "PHANTOM-ABSENT"))
             elif name == "display-mode":
                 hive = find(MOUNT, SYSTEM_HIVE)
                 r = subprocess.run([str(c) for c in ["sudo", sys.executable,

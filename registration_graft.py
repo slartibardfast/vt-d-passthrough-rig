@@ -169,7 +169,8 @@ def open_hive(path, write=False):
     if not os.path.exists(path):
         raise Bad(f"no such hive: {path}")
     try:
-        return hivex.Hivex(path, write=write)
+        return hivex.Hivex(str(path), write=write)   # the binding takes a string, and a Path
+        #                                            reaching it fails only when a caller passes one
     except Exception as exc:
         raise Bad(f"cannot open {path}: {exc}")
 
@@ -912,6 +913,58 @@ def cmd_package(a):
     return 0
 
 
+# ---------- the phantom monitors ----------
+
+# A display driver attaches a head to a monitor, and the modes it may offer come from that monitor's
+# EDID. This guest carries a `Default_Monitor` under `Enum\DISPLAY` whose instances hold
+# `bad_edid = 0`, beside two Plug and Play monitors that do advertise modes. A driver that attaches to
+# the monitor with no modes has nothing to set, and the campaign's own record names that shape the
+# phantom-head defect. Removing the phantom entries leaves PnP one family of monitors to bind.
+PHANTOM = "Default_Monitor"
+
+
+def phantom_monitors(h):
+    """[(instance name, bad_edid value)] for the Default_Monitor devices in this hive."""
+    cs = current_control_set(h)
+    key = descend(h, [cs, "Enum", "DISPLAY", PHANTOM])
+    found = []
+    for inst in (h.node_children(key) or []) if key is not None else []:
+        dp = child(h, inst, "Device Parameters")
+        bad = None
+        if dp is not None:
+            v = value_map(h, dp).get("bad_edid")
+            if v is not None:
+                bad = decode(h, v)
+        found.append((h.node_name(inst), bad))
+    return found
+
+
+def cmd_phantom_monitors(a):
+    h = open_hive(a.hive, write=a.apply)
+    cs = current_control_set(h)
+    found = phantom_monitors(h)
+    place = "%s\\Enum\\DISPLAY\\%s" % (cs, PHANTOM)
+    print("%s: %d instance(s)" % (place, len(found)))
+    for name, bad in found:
+        print("   %-34s bad_edid=%s" % (name, bad))
+    parent = descend(h, [cs, "Enum", "DISPLAY"])
+    present = child(h, parent, PHANTOM) is not None
+    if a.check:
+        print("verdict: %s" % ("PHANTOM-PRESENT" if present else "PHANTOM-ABSENT"))
+        return 0 if not present else 1
+    if not a.apply:
+        print("print-only: nothing removed; pass --apply, or --check to grade the hive")
+        return 0
+    if present:
+        h.node_delete_child(child(h, parent, PHANTOM))
+        h.commit(a.hive)
+        print("removed %s" % place)
+    after = phantom_monitors(open_hive(a.hive))
+    print("read back: %d phantom instance(s) remain" % len(after))
+    print("verdict: %s" % ("PHANTOM-ABSENT" if not after else "PHANTOM-PRESENT"))
+    return 0 if not after else 1
+
+
 def build_writes(src, a, drivers, vgacompat):
     """The target set, in words: bind the miniport, then make the device-facing copy agree."""
     cs, ck, vid = src["control_set"], src["class_key"], src["videoid"]
@@ -997,6 +1050,11 @@ def main():
     pkg.add_argument("--apply", action="store_true")
     pkg.add_argument("--check", action="store_true",
                      help="compare the volume against the package and answer PLACED or INCOMPLETE")
+    ph = sub.add_parser("phantom-monitors",
+                        help="remove the Default_Monitor devices that carry no EDID")
+    ph.add_argument("hive")
+    ph.add_argument("--check", action="store_true", help="grade the hive, change nothing")
+    ph.add_argument("--apply", action="store_true", help="delete the Default_Monitor key")
     a = ap.parse_args()
     if a.cmd == "check":
         return cmd_check(a)
@@ -1008,6 +1066,8 @@ def main():
         return cmd_display_mode(a)
     if a.cmd == "package":
         return cmd_package(a)
+    if a.cmd == "phantom-monitors":
+        return cmd_phantom_monitors(a)
     ap.print_help()
     return 2
 
