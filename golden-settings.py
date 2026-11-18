@@ -655,7 +655,7 @@ def main():
                 hive = find(MOUNT, SYSTEM_HIVE)
                 r = subprocess.run([str(c) for c in ["sudo", sys.executable,
                                                      str(RIG / "registration_graft.py"), "crash-dump",
-                                                     str(hive), "--mode", "kernel", "--check"]],
+                                                     str(hive), "--mode", a.dump_mode, "--check"]],
                                    capture_output=True, text=True)
                 tail = [l for l in (r.stdout + r.stderr).splitlines() if "verdict" in l]
                 if r.returncode != 0:
