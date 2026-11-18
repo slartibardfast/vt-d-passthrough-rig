@@ -416,7 +416,7 @@ amend "ended=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "outcome=$OUTCOME" "lived_seconds=$
 # and rebooted before the hold expired read as `measured-shutdown` with `crash_suspected=false`, while
 # their own collector logs held `*** Fatal System Error`. The kernel's last words on the debugger wire
 # decide it now, and the signature is recorded beside the flag so a reader can check it.
-if CRASH=$("$RIG/crash-signature.py" "$RUN/kdc-detached.log" 2>/dev/null); then
+if CRASH=$(python3 "$RIG/crash-signature.py" "$RUN/kdc-detached.log" 2>/dev/null); then
   amend "crash_suspected=true" "crash_signature=$CRASH"
   printf 'crash: the guest crashed: %s\n' "$CRASH"
 fi

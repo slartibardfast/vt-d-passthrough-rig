@@ -275,7 +275,9 @@ def test_a_bugcheck_in_the_collector_log_is_recorded_as_a_crash():
     the runner has to call it and the signature has to land in the record beside the flag.
     """
     src = (ROOT / "run-experiment.sh").read_text()
-    assert "crash-signature.py" in src, "the runner must ask the detector rather than guess"
+    assert 'python3 "$RIG/crash-signature.py"' in src, (
+        "the detector has to be called through the interpreter: the first live use called it directly "
+        "and the file's missing execute bit silenced it, so a crashed boot still read as clean")
     assert 'crash_suspected=true' in src, "a bugcheck has to flip the flag"
     assert 'crash_signature=' in src, "and the signature is recorded so a reader can check the claim"
 
