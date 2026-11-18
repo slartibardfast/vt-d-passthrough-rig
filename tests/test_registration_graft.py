@@ -246,3 +246,39 @@ def test_a_destination_id_is_a_place_on_the_volume_not_a_path_fragment():
     assert rg.volume_path(root, "12", "ati2mtag.sys") == \
         root / "WINDOWS" / "system32" / "drivers" / "ati2mtag.sys", \
         "a backslash inside one component lands nowhere the read-back looks"
+
+
+def test_a_check_writes_nothing_and_a_placement_is_then_placed(tmp_path):
+    """A check that can create what it checks is not a check, and one did here."""
+    from types import SimpleNamespace
+
+    inf = tmp_path / "package.inf"
+    inf.write_text(PACKAGE_INF)
+    package = tmp_path / "package"
+    package.mkdir()
+    (package / "ati2dvag.dll").write_bytes(b"display driver")
+    (package / "ati2cqag.dll").write_bytes(b"the 2d component")
+    (package / "atiicdxx.dat").write_bytes(b"data")
+    (package / "atimpc64.dll").write_bytes(b"monitor component")
+    (package / "atiogl.xml").write_bytes(b"gl config")
+    (package / "ati2mtag.sys").write_bytes(b"miniport")
+    (package / "ati2erec.dll").write_bytes(b"recorder")
+    root = tmp_path / "volume"
+    (root / "WINDOWS").mkdir(parents=True)
+
+    def call(**kw):
+        args = SimpleNamespace(root=str(root), inf=inf, section="ati2mtag_Kaveri_Desktop",
+                               package=str(package), with_drivers=False, check=False, apply=False)
+        for k, v in kw.items():
+            setattr(args, k, v)
+        return rg.cmd_package(args)
+
+    assert call(check=True) == 1, "an empty volume is not placed"
+    assert not list((root / "WINDOWS" / "system32").glob("*")) if (root / "WINDOWS" / "system32").is_dir() else True, \
+        "the check must not have written the files it was checking"
+    assert call(apply=True) == 0
+    assert (root / "WINDOWS" / "system32" / "ati2cqag.dll").read_bytes() == b"the 2d component"
+    assert (root / "WINDOWS" / "atiogl.xml").is_file(), "a Windows-destination file is not in system32"
+    assert not (root / "WINDOWS" / "system32" / "ati2mtag.sys").exists(), \
+        "the miniport stays on the driver volume"
+    assert call(check=True) == 0

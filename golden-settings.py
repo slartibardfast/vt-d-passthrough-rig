@@ -527,14 +527,14 @@ def main():
             elif name == "display-package":
                 call = [sys.executable, str(RIG / "registration_graft.py"), "package", str(MOUNT),
                         "--inf", str(a.display_inf or a.class_binding),
-                        "--package", str(a.display_package)]
+                        "--package", str(a.display_package), "--check"]
                 r = subprocess.run([str(c) for c in ["sudo"] + call], capture_output=True, text=True)
-                tail = [l for l in (r.stdout + r.stderr).splitlines() if "read back" in l]
+                tail = [l for l in (r.stdout + r.stderr).splitlines() if "verdict" in l]
                 if r.returncode != 0:
                     bad.append("the display package did not read back: %s"
-                               % (tail[-1] if tail else (r.stdout + r.stderr).strip()[:160]))
+                               % (tail[-1] if tail else (r.stdout + r.stderr).strip()[-300:]))
                 else:
-                    print("read back display-package: %s" % (tail[-1] if tail else "placed"))
+                    print("read back display-package: %s" % (tail[-1] if tail else "PACKAGE-PLACED"))
             elif name == "display-mode":
                 hive = find(MOUNT, SYSTEM_HIVE)
                 r = subprocess.run([str(c) for c in ["sudo", sys.executable,

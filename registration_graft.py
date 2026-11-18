@@ -834,26 +834,26 @@ def inf_copy_plan(inf_path, section):
 
 
 def cmd_package(a):
-    # The install section is the one the INF's model entry names for this device, so it is read from
-    # the INF unless a caller names another one explicitly.
+    """Read the INF's placement list, then check it, print it, or place it.
+
+    The three phases are separate on purpose. An earlier version wrote while it was building the
+    list, gated on whether it had a volume root, so a `--check` against a root wrote the files it was
+    supposed to be checking and then reported them present. A check that can create what it checks is
+    not a check.
+    """
     section = a.section or inf_binding(a.inf)["InfSection"]
     plan = inf_copy_plan(a.inf, section)
     if not plan:
-        raise Bad(f"the INF's [{a.section}] names no CopyFiles group this tool can resolve, so the "
+        raise Bad(f"the INF's [{section}] names no CopyFiles group this tool can resolve, so the "
                   f"package it wants cannot be placed")
     package = Path(a.package)
-    root = Path(a.root) if a.root else None
-    copied, skipped, missing = [], [], []
-    seen = set()
-    # The package is a Windows one, so its names match without regard to case; and where the INF names
-    # a source it then renames, this package ships the destination name instead. Both are read rather
-    # than treated as an omission.
-    available = {p.name.lower(): p for p in package.iterdir() if p.is_file()}
+    available = {q.name.lower(): q for q in package.iterdir() if q.is_file()}
+    entries, skipped, missing, seen = [], [], [], set()
     for source, dest_name, dest_id in plan:
         if dest_id == "12" and not a.with_drivers:
             skipped.append((source, "the miniport and its reminder belong on the driver volume"))
             continue
-        if dest_id not in ("10", "11"):
+        if dest_id not in ("10", "11", "12"):
             skipped.append((dest_name, "destination %s is not this session's business" % dest_id))
             continue
         if dest_name.lower() in seen:
@@ -863,35 +863,50 @@ def cmd_package(a):
         if src is None:
             missing.append(source)
             continue
-        where = DEST_NAMES.get(dest_id, "unmapped id %s" % dest_id)
-        target = None
-        if root is not None:
-            target = volume_path(root, dest_id, dest_name)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(src.read_bytes())
-        copied.append((dest_name, dest_id, src.stat().st_size, sha_of(src)))
-    print(f"the INF's [{section}] wants {len(plan)} file(s); placing {len(copied)}")
-    for name, dest_id, size, digest in copied:
-        print("  %-22s -> %-16s %9d  %s" % (name, DEST_NAMES.get(dest_id, dest_id), size,
-                                            digest[:12]))
-    for name, why in skipped:
-        print("  skipped %-14s (%s)" % (name, why))
+        entries.append((dest_name, dest_id, src, src.stat().st_size, sha_of(src)))
+    print(f"the INF's [{section}] wants {len(plan)} file(s); {len(entries)} are placeable here")
     for name in missing:
         print("  MISSING from the package: %s" % name, file=sys.stderr)
     if missing:
         raise Bad("the package does not carry %s, and a display install that omits part of its own "
                   "set is the failure this step exists to prevent" % ", ".join(sorted(set(missing))))
+
+    root = Path(a.root) if a.root else None
+    if a.check:
+        if root is None:
+            raise Bad("--check needs the mounted volume root as its argument")
+        short = [name for name, dest_id, _src, _size, digest in entries
+                 if not volume_path(root, dest_id, name).is_file()
+                 or sha_of(volume_path(root, dest_id, name)) != digest]
+        print("checked %d of %d file(s) against the volume" % (len(entries) - len(short), len(entries)))
+        for name in short:
+            print("  not on the volume, or not the same bytes: %s" % name)
+        print("verdict: %s" % ("PACKAGE-PLACED" if not short else "PACKAGE-INCOMPLETE"))
+        return 0 if not short else 1
+
     if not a.apply:
-        print("print-only: nothing was copied; pass --apply with --root <mounted volume>")
+        for name, dest_id, _src, size, digest in entries:
+            print("  %-22s -> %-16s %9d  %s"
+                  % (name, DEST_NAMES.get(dest_id, dest_id), size, digest[:12]))
+        for name, why in skipped:
+            print("  skipped %-14s (%s)" % (name, why))
+        print("print-only: nothing was copied; pass --apply --root <mounted volume>, or --check")
         return 0
+
     if root is None:
-        raise Bad("--apply needs --root <the mounted volume root>")
-    bad = []
-    for name, dest_id, size, digest in copied:
+        raise Bad("--apply needs the mounted volume root as its argument")
+    for name, dest_id, src, size, digest in entries:
         target = volume_path(root, dest_id, name)
-        if not target.is_file() or sha_of(target) != digest:
-            bad.append(name)
-    print("read back: %d of %d files match their source digest" % (len(copied) - len(bad), len(copied)))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(src.read_bytes())
+        print("  placed %-22s -> %-16s %9d  %s"
+              % (name, DEST_NAMES.get(dest_id, dest_id), size, digest[:12]))
+    for name, why in skipped:
+        print("  skipped %-14s (%s)" % (name, why))
+    bad = [name for name, dest_id, _src, _size, digest in entries
+           if not volume_path(root, dest_id, name).is_file()
+           or sha_of(volume_path(root, dest_id, name)) != digest]
+    print("read back: %d of %d files match their source digest" % (len(entries) - len(bad), len(entries)))
     if bad:
         raise Bad("these files did not read back identical: %s" % ", ".join(bad))
     return 0
@@ -980,6 +995,8 @@ def main():
     pkg.add_argument("--with-drivers", action="store_true",
                      help="also place the destination-12 files, which this rig keeps on the channel")
     pkg.add_argument("--apply", action="store_true")
+    pkg.add_argument("--check", action="store_true",
+                     help="compare the volume against the package and answer PLACED or INCOMPLETE")
     a = ap.parse_args()
     if a.cmd == "check":
         return cmd_check(a)
