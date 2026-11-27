@@ -56,6 +56,7 @@ API_CONTINUE     = 0x00003136
 API_CONTINUE2    = 0x0000313C     # the exception-resume variant: carries the control set
 API_GET_VERSION  = 0x00003146     # 0x313C is Continue2 - measured law from windbgkd.h
 API_READ_VM      = 0x00003130
+API_WRITE_VM     = 0x00003131
 API_READ_PHYS    = 0x00003139
 API_GET_CONTEXT  = 0x00003132
 API_SET_CONTEXT  = 0x00003133
@@ -246,7 +247,7 @@ def handle(kd, ptype, bcount, pid, cksum, data):
         ret = struct.unpack_from("<i", data, 8)[0] if len(data) >= 12 else 0
         log("RX manipulate api=%#x ret=%#x len=%d" % (api, ret & 0xFFFFFFFF, len(data)))
         pending = getattr(kd, "pending", None)
-        if pending in ("step-patch", "step-go", "ctx-dump", "read-dump"):
+        if pending in ("step-patch", "step-go", "ctx-dump", "read-dump", "write-dump"):
             pass
         elif len(data) > 56:
             for j in range(0, len(data), 16):
@@ -288,6 +289,12 @@ def handle(kd, ptype, bcount, pid, cksum, data):
                 chunk = data[j:j+16]
                 asc = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
                 log("    %04x  %s  %s" % (j - 0x38, chunk.hex(" "), asc))
+            kd.pending = None
+            kd.send_control(T_ACK, pid)
+            return
+        if pending == "write-dump":
+            got = struct.unpack_from("<I", data, 0x1C)[0] if len(data) >= 0x20 else 0
+            log("WRITE ret=%#x actual=%#x" % (ret & 0xFFFFFFFF, got))
             kd.pending = None
             kd.send_control(T_ACK, pid)
             return
@@ -446,6 +453,17 @@ def _dispatch_cmd(kd, line):
         u = struct.pack("<QII", addr, cnt, 0)   # u.ReadPhysicalMemory
         kd.send_data(T_MANIPULATE, manip_body(API_READ_PHYS, u), kd.my_pid)
         kd.pending = "read-dump"
+    elif line.startswith("write"):
+        try:
+            _, a, h = line.split()
+            addr = int(a, 16)
+            payload = bytes.fromhex(h)
+        except ValueError:
+            log("  bad write command")
+            return
+        u = struct.pack("<QII", addr, len(payload), 0) + payload
+        kd.send_data(T_MANIPULATE, manip_body(API_WRITE_VM, u), kd.my_pid)
+        kd.pending = "write-dump"
     elif line == "go":
         kd.continue_go()
     elif line == "step":
