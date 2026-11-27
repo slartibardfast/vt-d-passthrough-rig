@@ -199,3 +199,16 @@ or pointer-based reference.
 The `CP_RB0_BASE` seen at `0xFF740000` may therefore be armed by the VBIOS/CSM before Windows loads, or by
 a computed accessor. The Windows driver's 2D engine never reaches its own ring function, which matches the
 `0xEA` wait.
+
+## The FB window is 16 MiB at 0xF4000000
+
+`MC_VM_FB_LOCATION` (`0x2024`) reads `0xF4FFF400`: the base is `0xF4000000` and the top is `0xF4FF0000`,
+a 16 MiB window. The next MC words are `0x00000000`, `0x0003FFFF`, `0x00000000`.
+
+The ring at `0xFF740000` is above that window. The BAR 0 read at the ring-minus-base offset `0xB740000`
+returns unrelated data, and the QEMU monitor has no `write` command, so the host cannot move the window
+itself.
+
+The controlled window move needs a guest-side write to the aperture: the collector has `read` only, so the
+next step is a `write` command over the KD `DbgKdWriteVirtualMemoryApi` (the aperture VA plus `0x2024`),
+then a BAR 0 read at offset zero for the packet.
