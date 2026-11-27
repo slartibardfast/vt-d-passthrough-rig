@@ -23,7 +23,7 @@ cleanup() {
 trap cleanup EXIT
 
 sudo qemu-nbd -r -c /dev/nbd0 "$IMG"
-for _ in $(seq 1 20); do [ -b /dev/nbd0p1 ] && break; sleep 0.5; done
+for _ in $(seq 1 20); do [ -b /dev/nbd0p1 ] && break; sleep 1; done
 [ -b /dev/nbd0p1 ] || { printf 'the overlay has no NTFS partition at p1\n' >&2; exit 1; }
 sudo ntfs-3g -o ro /dev/nbd0p1 "$MNT"
 [ -s "$MNT/cdb-out.txt" ] || { printf 'cdb-out.txt is not on the NTFS partition\n' >&2; exit 1; }
