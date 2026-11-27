@@ -111,5 +111,12 @@ So the ring setup is not the x64 difference, and `CP_RB0_RPTR` at `0x20` says th
 The CP/PFP microcode register constants are sparse in both builds. The x64 miniport has one
 `CP_PFP_UCODE_DATA` (`0xC214`) reference at RVA `0x143BF`; the x86 miniport has none. The x64 `ati2cqag`
 has one `CP_PFP_UCODE_ADDR` (`0xC210`) at `0x691CA` and one `CP_ME_UCODE_ADDR` (`0xC220`) at `0x59435`;
-the x86 `ati2cqag` has neither. These are single references, not a loader loop, so the microcode load is
-either elsewhere or reached through a computed offset. That is the next place to look.
+the x86 `ati2cqag` has neither. These are single references, not a loader loop. The `0x691CA` reference
+disassembles to an alignment routine (`add $0x1f; and $0xffffffe0`), not a register write, and the
+`0x59435` reference lands in return code, so both are false positives. The microcode load is not visible
+as a direct register constant in either `ati2cqag`.
+
+The next probe is the packet the CP fetched. `CP_RB0_BASE` (`0xC100`) and `CP_RB0_WPTR` (`0xC114`) can
+be read through the host monitor during a boot, and the ring buffer's guest virtual address is in the
+`ati2cqag` context that the collector already reads. Decoding the first 32-byte packet says whether the
+engine is being asked to do something the 2D block cannot complete.
