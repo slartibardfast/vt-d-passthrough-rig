@@ -164,3 +164,14 @@ the ring VA is not a plain field of the engine object.
 The ring base `0xFF740000` is a GART or memory-controller address. The bridge from it to the guest VA is
 the engine's `0xC0` vtable slot (`0xfffff97fff57e5f0`), whose method returns the object the ring function
 adds `0x18` to. Reading that slot from the file and disassembling its target is the next static step.
+
+## The 0xC0 method is a getter
+
+The engine vtable slot `0xC0` is RVA `0x34620`. It switches on `%edx` and returns `[rcx+0x40]` for 0,
+`[rcx+0x48]` for 1, and `[rcx+0x50]` for 2. The ring function calls it with `edx=0`, so the ring object is
+`[engine+0x40]` = `0xfffffa8000fbbda0`.
+
+That object's `+0x18` is `0xfffffa8000c57010`, a sub-object with a vtable and two `0x7c0` sizes, not the
+packet. The ring base the function adds is the caller's `%rdi`, and the caller reaches the function
+indirectly, so the next probe is an entry break at RVA `0x1369A`. At that entry `%rdi` holds the ring base
+and `%rcx`/`%rsi` hold the adapter, which gives the buffer's guest VA directly.
