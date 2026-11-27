@@ -1,0 +1,18 @@
+The first probe5 boot (run bar5-probe5) patched four bytes at file offset 0x26753 in ati2cqag.dll,
+replacing `4c 8b 43 48` with `cc 90 90 90`, and did not recompute the PE checksum.
+
+Result, from the run's own files:
+
+  contract: session_ready=True desktop_reached=True manual_resume=False abandoned=False
+  kdc-detached.log: 116 MODULE LOAD lines, including ati2mtag.sys and ati2dvag.dll, with no
+                    ati2cqag.dll line at any point in the run
+  modules.txt:      the same list, with no cqag entry
+
+Checksums, computed over the whole file with the checksum field zeroed and folded per the PE format:
+
+  work/package/ati2cqag.dll         stored 0x000d9653  computed 0x000d9653  (matches)
+  work/package-probe5/ati2cqag.dll  stored 0x000d9653  computed 0x000d63a1  (before the fix)
+
+The patched image was therefore not loaded, which is why the break could not fire and why the run reached
+a desktop without the 2D engine. The probe5 package now stores the recomputed 0x000d63a1, and the boot that
+tests it is bar5-probe5b. Whether the checksum is the gate is established by that boot, not by this note.
