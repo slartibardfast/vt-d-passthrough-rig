@@ -1,0 +1,41 @@
+Probe5b: the driver's poll address and the host's BAR 5 window, read at the same held break.
+
+The package is work/package-probe5. It carries `cc 90 90 90` at file offset 0x26753 (RVA 0x27353) and a
+recomputed PE checksum of 0x000d63a1. The earlier boot with the same bytes and the stale checksum never
+loaded the DLL at all (work/evidence/probe5-checksum-rejection.txt).
+
+From work/runs/bar5-probe5b/kdc-detached.log:
+
+  [01:03:21] MODULE LOAD pid=0x80800001 base=0xfffff97fff507000 name=\WINDOWS\System32\ati2cqag.dll
+  [01:03:21] *** STATE CHANGE 0x3030 pid=0x80800001 - HOLDING (machine frozen) ***
+  [01:03:22] CTX ... Rdx=0xfffffa8000c7b000 Rbx=0xfffffadfac963bd0 ... R8=0xfffffa8000c7b000
+                    Rip=0xfffff97fff52e353
+
+Rip is the module base plus 0x27353, the patched instruction in the callback's indirect branch. Rbx is the
+context and Rdx is the adapter.
+
+The collector's reads from the held guest:
+
+  [ctx+0x48]          0xfffffadfaae51010     the address the poll reads
+  [adapter+0x138]     0xfffffadfaae49000     the base the callback subtracts
+  difference          0x8010
+
+  base+0x8010  GRBM_STATUS     0x00003028
+  base+0x8008  GRBM_STATUS2    0x00000008
+  base+0x8680  CP_STAT         0x00000000
+  base+0x8700  CP_RB0_RPTR     0x00000000
+
+The host's read of BAR 5 with the guest still held:
+
+  BAR 5 guest phys 0xFEB80000-0xFEBBFFFF
+  +0x8008  0x00000008
+  +0x800C  0x00000010
+  +0x8010  0x00003028
+  +0x8014  0x00000006
+  +0x8680  0x00000000
+  +0x8700  0x00000000
+
+Every word the driver read matches the host's read of the same offset, and the driver's status address is
+its base plus 0x8010 exactly. The driver's `[adapter+0x138]` is therefore the host's BAR 5 window, and at
+this break the engine is idle: GUI_ACTIVE and CP_BUSY are clear and the ring pointers are zero. The busy
+word (`0xA0003028`) measured in the earlier unpatched boot is a later state of this same window.
