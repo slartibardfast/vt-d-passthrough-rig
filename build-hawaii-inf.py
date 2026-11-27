@@ -2,7 +2,7 @@
 """Build the XP INF candidate that points the 290X at a Hawaii section.
 
 The XP 14.4 INF maps `PCI\\VEN_1002&DEV_67B0` to `ati2mtag_Kaveri_Desktop` and has no Hawaii section. The
-same-era Win7 14.4 INF maps the same device to `ati2mtag_Hawaii` and carries two Hawaii power settings.
+same-era Win7 INF maps the same device to `ati2mtag_Hawaii` and carries two Hawaii power settings.
 This script clones the Kaveri install, services and software-settings sections under Hawaii names, adds
 the Hawaii settings, and repoints the device line. Nothing else changes.
 """
