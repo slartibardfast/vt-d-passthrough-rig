@@ -22,7 +22,11 @@ BATCH_HEADS = {"@echo", "rem", "set", "for", "if", "copy", "regedit", "shutdown"
                # Added with the live captures: the hook starts the WMI service and asks the
                # service control manager for the miniport's state. Both are commands, and a linter
                # that freezes its command list turns a legitimate line into prose.
-               "sc", "net", "setlocal", "endlocal", "pushd", "popd", "del", "move", "mkdir"}
+               "sc", "net", "setlocal", "endlocal", "pushd", "popd", "del", "move", "mkdir",
+               # Added with the dump analysis: the hook changes to the debug directory and runs
+               # the guest's own debugger inside an `if exist` block. Both are commands, and the
+               # block's closing paren is structure rather than prose.
+               "cd", "cdb.exe"}
 
 
 def _lines(text):
@@ -47,6 +51,8 @@ def lines_that_are_not_batch(text):
     for number, line in enumerate(_lines(text), 1):
         text_stripped = line.strip()
         if not text_stripped or text_stripped.startswith((":", "%")):
+            continue
+        if text_stripped in ("(", ")"):
             continue
         head = text_stripped.split(" ")[0].lower().rstrip(":")
         if head not in BATCH_HEADS:
