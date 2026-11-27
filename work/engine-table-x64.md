@@ -120,3 +120,22 @@ The next probe is the packet the CP fetched. `CP_RB0_BASE` (`0xC100`) and `CP_RB
 be read through the host monitor during a boot, and the ring buffer's guest virtual address is in the
 `ati2cqag` context that the collector already reads. Decoding the first 32-byte packet says whether the
 engine is being asked to do something the 2D block cannot complete.
+
+## The ring is not in the visible VRAM window
+
+The host monitor reads, with the guest at the bugcheck hold:
+
+```
+CP_RB0_BASE  0xFF740000
+CP_RB0_WPTR  0x00000020
+CP_RB0_RPTR  0x00000020
+```
+
+BAR 0 is guest physical `0xE0000000` to `0xEFFFFFFF`, the first 256 MiB of VRAM. The base's low 28 bits
+(`0xF740000`) land inside that window, but the eight dwords there are unrelated data
+(`0x61A04176`, `0x16F6A24D`, ...), not a PM4 packet. The base near `0xFF740000` sits at the top of the
+GPU's 4 GB address space, in the GART or system-memory aperture, so the host monitor cannot read the ring
+through BAR 0.
+
+The packet therefore has to come through the ring buffer's guest virtual address in the `ati2cqag`
+context, read with the collector at the probe5b break where `Rdx` is the adapter.
