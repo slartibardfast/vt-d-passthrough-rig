@@ -175,3 +175,15 @@ That object's `+0x18` is `0xfffffa8000c57010`, a sub-object with a vtable and tw
 packet. The ring base the function adds is the caller's `%rdi`, and the caller reaches the function
 indirectly, so the next probe is an entry break at RVA `0x1369A`. At that entry `%rdi` holds the ring base
 and `%rcx`/`%rsi` hold the adapter, which gives the buffer's guest VA directly.
+
+## The ring function is not on the failing path
+
+The probe6 package put `int3` at RVA `0x1369A`, the ring function entry, with the checksum recomputed to
+`0x000e0a23`. The module loaded at `0xfffff97fff507000` in run `engine-ring`, but no state change appeared
+at the entry before the bugcheck: the first `STATE CHANGE` at `02:34:18` follows the kernel's break-in
+countdown and the `0xEA` fatal line.
+
+So the `ati2cqag` ring function runs after the wait that never passes. The `CP_RB0` ring that fetched one
+32-byte packet is armed somewhere else, most likely by the miniport's register table: the `0xC100`
+immediate is absent from the miniport `.text`, so the ring setup is a data table or an accessor call, not
+an inlined constant. The next probe is that table or accessor.
