@@ -56,3 +56,25 @@ Find the code that consumes the record's index and selects the descriptor. Compa
 supported devices' indices `0x7D` and `0x82`, and the descriptor at `0x226D20` against the entries those
 select. The switch retarget alone did not move the engine, so the record-to-descriptor path is the next
 place the 0x67B0 device can be losing its Hawaii data.
+
+## The switch selects a clock table, not the descriptor
+
+The device-ID switch at file `0x119D4F` (VA `0x12A74F`) subtracts `0x6640` and selects one of four
+clock/voltage tables, storing the choice at `adapter+0x15C8`:
+
+| case | table |
+|---|---|
+| `0x6640` | `0x32BAC0` |
+| `0x6641` | `0x32BB10` |
+| `0x6650`, `0x6658`, `0x665C` | `0x32BA20` |
+| `0x6651`, `0x665D` | `0x32BA70` |
+
+The tables hold 16-bit clock/voltage pairs, not pointers. The Hawaii descriptor at `0x226D20` is not
+referenced by an absolute pointer anywhere in the file, and the device-table records are not either. The
+record's index (`0x78` for `0x67B0`, `0x7D` for `0x985F`, `0x82` for `0x6900`) is an ASIC family id used
+by a path that has not been traced yet.
+
+The patched `0x67B0` case takes the `0x6640` case's table at `0x32BAC0`. The stock case never handles
+`0x67B0`, so the patch is selecting a Bonaire-family clock table for the Hawaii device. Whether that table
+is the right one is the next question, and the comparison is against the table the native Hawaii path
+selects in the same-era Windows 7 x64 driver.
