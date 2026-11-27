@@ -62,9 +62,11 @@ done
 # when restoring BARs"), devices returning not-ready after reset can lose
 # their config/BAR restore, breaking VFIO passthrough device init (LKML Oct
 # 2026, fixes 0f8b5d90d179 + e8df1d194c39). Dead card MMIO to the guest is
-# exactly the ATOM spin's shape. The discriminating test is the LTS kernel
-# (6.18.62, predates the 7.2 series): if KVM+LTS boots clean, the rig runs
-# LTS until zen carries the fixes.
+# exactly the ATOM spin's shape. call/0018 keeps the rig on linux-zen and
+# permits only a forward kernel step: LTS is withdrawn because stock
+# linux-lts does not carry the ACS override the card's isolation needs, so
+# an LTS boot changes the kernel and the topology at once. The forward test
+# is the newest linux-zen, one kernel change against the same candidate.
 if [ "${ACCEL:-kvm}" = tcg ]; then MACHINE="pc,accel=tcg"; else MACHINE="pc,accel=kvm,hpet=off"; fi
 # The argv is one array rather than an inline command, for two reasons. PRINT_ONLY can then
 # print exactly what a boot would run, which is what the iteration loop's dry run needs, and
