@@ -255,3 +255,13 @@ mapping: it is a VRAM address left by the pre-boot path, and the BAR 0 window ca
 FB window sits at `0xF4000000`. The next step is to move the FB window to `0xFF740000` with a correct
 four-byte write, which the earlier KD attempt got wrong (it reported `actual=0x8` for a four-byte
 payload), or to have the GPU copy the page out.
+
+## BAR 0 reads dead zeros in the hung state
+
+`engine-ring0` read BAR 0 at `0xF740000` (the ring's low 28 bits) and `0xB740000` (ring minus the FB base)
+in 24 samples on the full-port candidate. The busy word was `0xA0003028` in all 24, and both BAR 0 offsets
+read zero in every sample. The sampler's own rule is that a zero is an absent register or a dead read
+path, so this does not show the VRAM content: BAR 0 is not a live window in the hung state. The earlier
+run's nonzero data at `0xB740000` came from a different state, and it was not a PM4 packet. The host-side
+read of the ring is therefore closed; the packet needs the KD window move with a verified four-byte write,
+or the VBIOS's own translation.
