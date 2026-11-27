@@ -187,3 +187,15 @@ So the `ati2cqag` ring function runs after the wait that never passes. The `CP_R
 32-byte packet is armed somewhere else, most likely by the miniport's register table: the `0xC100`
 immediate is absent from the miniport `.text`, so the ring setup is a data table or an accessor call, not
 an inlined constant. The next probe is that table or accessor.
+
+## No pointer to the CP tables
+
+The miniport's `.rdata` holds `0xC100` at RVA `0x14FA53` and its `.data` holds it at `0x48231F`, inside
+contiguous register lists (`0xBF00`, `0xC000`, `0xC100`, `0xC200`, ...). No eight-byte pointer to either
+table exists anywhere in the file (`0x49231F`, `0x492300`, `0x15FA53`, `0x15FA00` all return zero hits),
+and no `.text` instruction names those addresses. So the miniport does not consume the tables by a direct
+or pointer-based reference.
+
+The `CP_RB0_BASE` seen at `0xFF740000` may therefore be armed by the VBIOS/CSM before Windows loads, or by
+a computed accessor. The Windows driver's 2D engine never reaches its own ring function, which matches the
+`0xEA` wait.
