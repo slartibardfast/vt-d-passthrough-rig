@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
-"""Check the combined+switch miniport with the Hawaii descriptor and the firmware code patch."""
+"""Check the combined+switch miniport with the Hawaii descriptor and the descriptor-walk redirect."""
+import hashlib
 import struct
 import sys
 
 PATH = sys.argv[1] if len(sys.argv) > 1 else "work/candidates/combined-hawaii-table.sys"
-SIZE = 8525834
+SIZE = 8525824
 SWITCH = bytes.fromhex("2d b0 67 00 00")
 FIELDS = ((0x226D24, 16, "max_tile_pipes"), (0x226D44, 4, "max_shader_engines"),
           (0x226D54, 4, "max_backends_per_se"), (0x226D5C, 11, "max_cu_per_sh"),
           (0x226D64, 0x3A000012, "PA_SC_RASTER_CONFIG"), (0x226D84, 0x2E, "PA_SC_RASTER_CONFIG_1"))
-SITE = (0x24A0D, bytes.fromhex("e9 1e 00 00 00 90 90"), "firmware site")
-CAVE = (0x24A30, bytes.fromhex("48 b9 28 37 30 00 00 00 00 00 e9 d5 ff ff ff"), "firmware cave")
+# The walk at file 0x8EDF5 loads the table object; the reader at 0xA9BC4 turns that object into
+# an entry array. P1 points the walk at the grafted donor tail, P2 keeps the table in rax across
+# the abandoned helper, and P3 reads the entries inline after the count.
+P1 = (0x8EDF5, bytes.fromhex("4c 8d 2d 2c 3f 26 00"), "walk load")
+P2 = (0xA9BCC, bytes.fromhex("4c 89 e8 90 90"), "reader helper")
+P3 = (0xA9BD1, bytes.fromhex("48 8d 40 08"), "reader entry")
+P1_TARGET = 0x303728
+SLOT = 0x2E28AB
+SLOT_SIZE = 60574
+SLOT_SHA256 = "100355efec51d175afc3cfe2e4f0e03a3e6862f659773564c082a9a736cf167e"
 
 
 def checksum(data):
@@ -27,28 +36,6 @@ def checksum(data):
         total = (total & 0xFFFF) + (total >> 16)
     total = (total & 0xFFFF) + (total >> 16)
     return stored, (total + len(data)) & 0xFFFFFFFF
-
-
-def reloc_has(data, page, entry):
-    pe = struct.unpack_from("<I", data, 0x3C)[0]
-    opt = pe + 24
-    so = opt + struct.unpack_from("<H", data, pe + 20)[0]
-    for i in range(struct.unpack_from("<H", data, pe + 6)[0]):
-        o = so + i * 40
-        name = data[o:o + 8].rstrip(b"\0").decode()
-        if name != ".reloc":
-            continue
-        vsz, va, rsz, ra = struct.unpack_from("<IIII", data, o + 8)
-        off = ra
-        while off + 8 <= ra + rsz:
-            blk, size = struct.unpack_from("<II", data, off)
-            if size == 0:
-                break
-            if blk == page:
-                return any(struct.unpack_from("<H", data, off + 8 + j * 2)[0] == entry
-                           for j in range((size - 8) // 2))
-            off += size
-    return False
 
 
 def main():
@@ -68,20 +55,40 @@ def main():
         if got != want:
             print("%s at %#x is %#x, expected %#x" % (label, off, got, want))
             return 1
-    for off, want, label in (SITE, CAVE):
+    for off, dev, label in ((0x1F13D0, 0x67B0, "0x67B0"), (0x1F13F0, 0x67B1, "0x67B1")):
+        if struct.unpack_from("<I", data, off + 4)[0] != dev:
+            print("%s record device mismatch at %#x" % (label, off))
+            return 1
+        if struct.unpack_from("<I", data, off + 8)[0] != 1:
+            print("%s record flags are not 1 at %#x" % (label, off))
+            return 1
+    for off, want, label in (P1, P2, P3):
         got = data[off:off + len(want)]
         if got != want:
-            print("%s at %#x is %s" % (label, off, got.hex(" ")))
+            print("%s at %#x is %s, expected %s" % (label, off, got.hex(" "), want.hex(" ")))
             return 1
-    if not reloc_has(data, 0x25000, 0xA432):
-        print("no DIR64 relocation at page 0x25000 offset 0x432")
+    disp = struct.unpack_from("<i", data, P1[0] + 3)[0]
+    target = (P1[0] + 0xA00 + 0x10000) + 7 + disp
+    if target != P1_TARGET:
+        print("walk target is %#x, expected %#x" % (target, P1_TARGET))
+        return 1
+    slot = data[SLOT:SLOT + SLOT_SIZE]
+    if hashlib.sha256(slot).hexdigest() != SLOT_SHA256:
+        print("donor slot at %#x is sha256 %s, expected %s"
+              % (SLOT, hashlib.sha256(slot).hexdigest(), SLOT_SHA256))
+        return 1
+    count = struct.unpack_from("<I", slot, 0xEC7D)[0]
+    entry = struct.unpack_from("<I", slot, 0xEC85)[0]
+    if count != 1 or entry != 0xF068:
+        print("donor tail is count %d entry %#x, expected count 1 entry 0xf068" % (count, entry))
         return 1
     stored, computed = checksum(data)
     if stored != computed:
         print("checksum is %#010x, computed %#010x" % (stored, computed))
         return 1
-    print("descriptor 16/4/4/11, raster 0x3A000012/0x2E, switch 0x67B0, firmware site+cave+DIR64, checksum %#010x"
-          % stored)
+    print("descriptor 16/4/4/11, raster 0x3A000012/0x2E, switch 0x67B0, records and flags 1, "
+          "walk -> %#x, donor %s count 1 entry 0xf068, checksum %#010x"
+          % (target, SLOT_SHA256[:8], stored))
     return 0
 
 

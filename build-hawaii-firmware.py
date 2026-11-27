@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Apply the x64 firmware-descriptor patch and its DIR64 relocation to the combined candidate."""
+"""Disproven: this builds the 0x3540D cave and reloc, which REA proved is a register write.
+
+Kept as the record of the wrong patch. The instruction feeds VideoPortWriteRegisterUlong, and the
+containing routine pushes command-ring words into register +0x324. The real x64 walk is at file
+0x8EDF5 and is already redirected in the combined candidates; see plan/0009#engine-table and
+check-engine-table.py.
+"""
 import struct
 import sys
 
