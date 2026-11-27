@@ -4,7 +4,7 @@ import hashlib
 import struct
 import sys
 
-PATH = sys.argv[1] if len(sys.argv) > 1 else "work/candidates/combined-hawaii-table.sys"
+PATH = sys.argv[1] if len(sys.argv) > 1 else "work/candidates/combined-hawaii-table-full.sys"
 SIZE = 8525824
 SWITCH = bytes.fromhex("2d b0 67 00 00")
 FIELDS = ((0x226D24, 16, "max_tile_pipes"), (0x226D44, 4, "max_shader_engines"),
@@ -15,7 +15,7 @@ FIELDS = ((0x226D24, 16, "max_tile_pipes"), (0x226D44, 4, "max_shader_engines"),
 # the abandoned helper, and P3 reads the entries inline after the count.
 P1 = (0x8EDF5, bytes.fromhex("4c 8d 2d 2c 3f 26 00"), "walk load")
 P2 = (0xA9BCC, bytes.fromhex("4c 89 e8 90 90"), "reader helper")
-P3 = (0xA9BD1, bytes.fromhex("48 8d 40 08"), "reader entry")
+P3 = (0xA9BD1, bytes.fromhex("48 8d 40 12"), "reader value")
 P1_TARGET = 0x303728
 SLOT = 0x2E28AB
 SLOT_SIZE = 60574
@@ -62,6 +62,15 @@ def main():
         if struct.unpack_from("<I", data, off + 8)[0] != 1:
             print("%s record flags are not 1 at %#x" % (label, off))
             return 1
+    if data[0x119D5B:0x119D5D] != bytes.fromhex("74 79"):
+        print("0x67B1 branch at 0x119d5b is %s, expected 74 79"
+              % data[0x119D5B:0x119D5D].hex(" "))
+        return 1
+    for i in range(32):
+        flags, value = struct.unpack_from("<II", data, 0x226600 + i * 8)
+        if (value >> 6) & 0x1F != 17:
+            print("tile entry %d PIPE_CONFIG is %d, expected 17" % (i, (value >> 6) & 0x1F))
+            return 1
     for off, want, label in (P1, P2, P3):
         got = data[off:off + len(want)]
         if got != want:
@@ -78,16 +87,17 @@ def main():
               % (SLOT, hashlib.sha256(slot).hexdigest(), SLOT_SHA256))
         return 1
     count = struct.unpack_from("<I", slot, 0xEC7D)[0]
-    entry = struct.unpack_from("<I", slot, 0xEC85)[0]
-    if count != 1 or entry != 0xF068:
-        print("donor tail is count %d entry %#x, expected count 1 entry 0xf068" % (count, entry))
+    value = struct.unpack_from("<I", slot, 0xEC7D + 0x12)[0]
+    if count != 1 or value != 0:
+        print("donor tail is count %d value %#x, expected count 1 value 0" % (count, value))
         return 1
     stored, computed = checksum(data)
     if stored != computed:
         print("checksum is %#010x, computed %#010x" % (stored, computed))
         return 1
     print("descriptor 16/4/4/11, raster 0x3A000012/0x2E, switch 0x67B0, records and flags 1, "
-          "walk -> %#x, donor %s count 1 entry 0xf068, checksum %#010x"
+          "0x67B1 branch, 32 tile entries 17, "
+          "walk -> %#x, donor %s count 1 value 0, checksum %#010x"
           % (target, SLOT_SHA256[:8], stored))
     return 0
 
