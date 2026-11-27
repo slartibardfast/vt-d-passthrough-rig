@@ -1,0 +1,29 @@
+The Hawaii INF candidate was tried in run `engine-hawaii` on 2026-11-27.
+
+What changed: `work/candidates/CA178340-hawaii.inf` points PCI\VEN_1002&DEV_67B0 at `ati2mtag_Hawaii`
+and adds the Win7 Hawaii settings (`PP_EnableBAPM=0`, `DalAllowDPrefSwitchingForGLSync=1`). The package
+and the display DLL are the stock ones.
+
+What the host series at BAR 5 offset 0x8010 read:
+
+  2  01:17:58  0x00003028   early boot
+  3  01:18:08  0xA0003028   the engine starts and stays busy
+  ...
+  32 01:23:18  0xA0003028
+  34 01:23:38  0x00003028   after the guest reset, before the reload
+  35 01:23:48  0x00003028
+  36 01:23:58  0x00003028
+  37 01:24:08  0xA0003028   after ati2cqag reloads at 0xfffff97fff507000
+  ...
+  55 01:27:21  0xA0003028
+
+The guest bugchecked 0x0000007F at 01:23:23 (argument 1 = 0x8), reset, reloaded ati2cqag at 01:24:08,
+and the busy word returned. The run reached no session: `session_ready=False desktop_reached=False`.
+The 0x7F differs from the 0xEA of the stock package, so the INF change altered the failure, and the
+engine still never returned to idle. The INF settings are not the cause of the idle wait.
+
+The peer's working x32 driver took a different route: it mapped 0x67B0 and 0x67B1 to the
+`ati2mtag_R505` install section and patched the miniport's device-ID switch (`sub eax,0x67B0` at file
+0xD39A3) plus the Hawaii geometry tables. The campaign's x64 miniport still carries the stock switch
+`sub eax,0x6640` at 0x119D4F, so the x64 path never selects the same data the peer's x32 patch selected.
+The next candidate is that switch, not another INF section.
