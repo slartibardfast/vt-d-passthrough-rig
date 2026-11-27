@@ -139,3 +139,28 @@ through BAR 0.
 
 The packet therefore has to come through the ring buffer's guest virtual address in the `ati2cqag`
 context, read with the collector at the probe5b break where `Rdx` is the adapter.
+
+## The adapter and engine objects at the break
+
+The probe5c break held `Rdx = 0xfffffa8000c7a000` (the adapter). The reads:
+
+```
+adapter+0x398   0xfffffa8000fbbd40   engine object
+adapter+0x138   0xfffffadfaae49000   aperture
+adapter+0x100   0xfffffab4d983b0     sub-object
+engine+0x00     0xfffff97fff57e530   vtable
+engine+0x08     0xfffffa8000c752b0
+engine+0x10     0xfffffa80010c68f8
+engine+0x18     0xfffffa8000c57010
+engine+0x20     0xfffffa8000ac4010
+engine+0x38     0xfffffa8000c7a000   the adapter
+engine+0x40     0xfffffa8000fbbda0
+```
+
+The `+0x18` object at `0xfffffa8000c57010` holds a vtable (`0xfffff97fff57e048`) and two `0x7c0` sizes;
+its `+0x70` and `+0x118` fields are more sub-object vtables. None of these fields is the PM4 packet, and
+the ring VA is not a plain field of the engine object.
+
+The ring base `0xFF740000` is a GART or memory-controller address. The bridge from it to the guest VA is
+the engine's `0xC0` vtable slot (`0xfffff97fff57e5f0`), whose method returns the object the ring function
+adds `0x18` to. Reading that slot from the file and disassembling its target is the next static step.
