@@ -94,3 +94,22 @@ x64 case `0x6640` table `0x32BAC0`. The other three match as well:
 So the switch patch selects the same clock/voltage data the peer's working x32 build used. The clock
 table is not where the x64 build differs, and the engine idle wait has to be in the miniport's engine or
 CP initialization, not in this table.
+
+## The CP ring setup is the same in both builds
+
+The ring function lives in `ati2cqag`, not the miniport. On x64 it runs at RVA `0x13770` onward; on x86
+the same function is at RVA `0xC40E` onward. Both read `CP_RB0_CNTL` (`0xC104`), mask the buffer-size
+fields, write the size back, write `CP_RB0_BASE` (`0xC100`), set the enable bit, read `CP_RB0_RPTR`
+(`0x8700`), write it to `CP_RB0_WPTR` (`0xC114`), and clear the enable bit. The x64 uses the same
+register offsets and the same field arithmetic as the x86.
+
+So the ring setup is not the x64 difference, and `CP_RB0_RPTR` at `0x20` says the CP fetched the first
+32-byte packet. The wait is in what the engine does with that packet, not in how the ring was armed.
+
+## The microcode registers
+
+The CP/PFP microcode register constants are sparse in both builds. The x64 miniport has one
+`CP_PFP_UCODE_DATA` (`0xC214`) reference at RVA `0x143BF`; the x86 miniport has none. The x64 `ati2cqag`
+has one `CP_PFP_UCODE_ADDR` (`0xC210`) at `0x691CA` and one `CP_ME_UCODE_ADDR` (`0xC220`) at `0x59435`;
+the x86 `ati2cqag` has neither. These are single references, not a loader loop, so the microcode load is
+either elsewhere or reached through a computed offset. That is the next place to look.
