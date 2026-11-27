@@ -78,3 +78,19 @@ The patched `0x67B0` case takes the `0x6640` case's table at `0x32BAC0`. The sto
 `0x67B0`, so the patch is selecting a Bonaire-family clock table for the Hawaii device. Whether that table
 is the right one is the next question, and the comparison is against the table the native Hawaii path
 selects in the same-era Windows 7 x64 driver.
+
+## The clock tables are identical
+
+The x86 switch at file `0xD39A3` (VA `0xE43A3`) has the same base (`0x6640`) and the same case layout as
+the x64 switch. Its case `0x6640` selects `0x2B19F0`, and that table is byte-for-byte identical to the
+x64 case `0x6640` table `0x32BAC0`. The other three match as well:
+
+| x86 | x64 |
+|---|---|
+| `0x2B1950` | `0x32BA20` |
+| `0x2B19A0` | `0x32BA70` |
+| `0x2B1A40` | `0x32BB10` |
+
+So the switch patch selects the same clock/voltage data the peer's working x32 build used. The clock
+table is not where the x64 build differs, and the engine idle wait has to be in the miniport's engine or
+CP initialization, not in this table.
