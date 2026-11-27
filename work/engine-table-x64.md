@@ -226,3 +226,21 @@ next boot's function-level reset provides.
 
 The VBIOS ring therefore cannot be reached by moving the FB window to it. The remaining path is the
 guest's own mapping of the top VRAM, if the VBIOS or the miniport creates one.
+
+## The CP is running and holding a consumed packet
+
+`engine-cpstate` read the CP's own state through BAR 5 in 40 samples on 2026-11-27. All 35 warm samples
+read `0x8010` = `0xA0003028` and `CP_STAT` (`0x8680`) = `0x84008000` with `CP_BUSY`. `CP_STALLED_STAT1`
+and `CP_STALLED_STAT2` are zero, `CP_STALLED_STAT3` is `0x6`, `CP_RB0_BASE` is `0xFF740000`,
+`CP_RB0_CNTL` is `0x00C00F11`, `CP_RB0_WPTR` and `CP_RB0_RPTR` are both `0x20`, `CP_ME_CNTL` and
+`CP_PFP_CNTL` are zero, `CP_MEC_CNTL` is 1, and `CP_PFP_UCODE_ADDR` and `CP_ME_UCODE_ADDR` are zero.
+
+So the ME and PFP are unhalted, the ring has no unread entry, and the processor still reports busy: it
+consumed one 32-byte packet and is holding it. This is not a halted engine and not an empty ring.
+
+The ring base `0xFF740000` does not appear as a dword anywhere in the miniport, so the base is a runtime
+allocation or the VBIOS's own ring. The 2D DLL carries the reset path: `mov 0x8020(%rax),%ecx` followed by
+`mov %ecx,0x8020(%rax)` at RVAs `0x23703` and `0x2371C`, which is a read-modify-write of `GRBM_SOFT_RESET`,
+and the wait reads `[aperture+0x8010]` at RVAs `0x2440D`, `0x244D2` and `0x2F6F7`. The call order between
+the reset and the wait is the next static question, because the reset that would clear a pre-boot packet
+sits in a function the wait may never reach.
