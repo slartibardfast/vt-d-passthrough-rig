@@ -1,0 +1,27 @@
+The peer's device switch was ported into the stageE miniport and booted in run `engine-switch` on
+2026-11-27.
+
+What changed: `work/candidates/ati2mtag-x64-hawaii.sys` (sha256 c9253d22...) carries
+`sub eax,0x67B0` at file 0x119D4F in place of the stock `sub eax,0x6640`, with the PE checksum
+recomputed to 0x008277c2. It was written into a copy of the base channel as `drv/ati2mtag.sys` and read
+back byte for byte (`work/channels/hawaii-switch.img`, sha256 e3e27249...). The boot used the stock
+`CA178340.inf` and the stock package, so the switch was the only change from the `bar5-global` control.
+
+The host series at BAR 5 offset 0x8010:
+
+  01:35:11  0x00003028   first sample, before the driver starts the engine
+  01:35:21  0xA0003028   busy from here
+  ...
+  01:40:34  the guest bugchecks 0xEA, then the debug path takes 0x7F (argument 1 = 0x8)
+  01:40:41  0x00003028   after the reset
+  01:41:15  ati2mtag and ati2cqag reload
+  01:41:21  0xA0003028   busy again
+  ...
+  01:44:xx  0xA0003028   last sample
+
+Five samples read 0x00003028 and forty-nine read 0xA0003028. The run contract is
+`session_ready=False desktop_reached=False`.
+
+The switch alone does not move the idle word. The engine still fetches work and stays busy until the
+0xEA, so the next base to carry the switch is the combined graft, and the device-table values are the
+candidate after that.

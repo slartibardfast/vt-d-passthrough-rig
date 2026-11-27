@@ -1,0 +1,218 @@
+=== sample 1 01:35:00 ===
+no BAR 5 in the monitor's memory map; refusing to guess an address
+=== sample 2 01:35:11 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0x00003028  bit31=0 bit29=0
+=== sample 3 01:35:21 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 4 01:35:31 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 5 01:35:41 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 6 01:35:51 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 7 01:36:01 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 8 01:36:14 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 9 01:36:24 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 10 01:36:34 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 11 01:36:44 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 12 01:36:54 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 13 01:37:04 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 14 01:37:18 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 15 01:37:28 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 16 01:37:38 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 17 01:37:48 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 18 01:37:58 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 19 01:38:08 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 20 01:38:22 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 21 01:38:32 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 22 01:38:42 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 23 01:38:53 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 24 01:39:03 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 25 01:39:13 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 26 01:39:27 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 27 01:39:37 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 28 01:39:47 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 29 01:39:57 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 30 01:40:07 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 31 01:40:17 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 32 01:40:31 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 33 01:40:41 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0x00003028  bit31=0 bit29=0
+=== sample 34 01:40:51 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0x00003028  bit31=0 bit29=0
+=== sample 35 01:41:01 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0x00003028  bit31=0 bit29=0
+=== sample 36 01:41:11 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0x00003028  bit31=0 bit29=0
+=== sample 37 01:41:21 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 38 01:41:36 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 39 01:41:46 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 40 01:41:56 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 41 01:42:06 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 42 01:42:16 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 43 01:42:26 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 44 01:42:40 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 45 01:42:50 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 46 01:43:00 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 47 01:43:10 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 48 01:43:20 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 49 01:43:30 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 50 01:43:44 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 51 01:43:54 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 52 01:44:04 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 53 01:44:14 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 54 01:44:24 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
+=== sample 55 01:44:35 ===
+BAR 5  guest phys 0xFEB80000-0xFEBBFFFF   00000000feb80000-00000000febbffff (prio 1, i/o): 0000:02:00.0 base BAR 5
+read   0xFEB80000 + 0x8010 = 0xFEB88010
+   +0x8010  0xA0003028  bit31=1 bit29=1
