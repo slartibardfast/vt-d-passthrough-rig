@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Extract the 32-bit ati2cqag from the pinned Catalyst 14.4 XP pack, expand it, and check its digest.
+# Extract the 32-bit ati2cqag from the pinned Catalyst XP pack, expand it, and check its digest.
 #
 # The compare task needs the same-era x86 build of the DLL. It lives inside the corpus pack as an SZDD
 # compressed member, so the extraction is recorded here rather than left as a binary in an ignored tree.
