@@ -212,3 +212,17 @@ itself.
 The controlled window move needs a guest-side write to the aperture: the collector has `read` only, so the
 next step is a `write` command over the KD `DbgKdWriteVirtualMemoryApi` (the aperture VA plus `0x2024`),
 then a BAR 0 read at offset zero for the packet.
+
+## The window move to the ring base breaks BAR 0
+
+The collector's new `write` command (KD `DbgKdWriteVirtualMemoryApi`, API `0x3131`) wrote `0xFF84FF74` to
+`MC_VM_FB_LOCATION` through the aperture VA. The KD returned `ret=0`, but `actual=0x8` for a four-byte
+payload, so the reply's actual field or the transfer length is not what the command assumes.
+
+After the write, BAR 0 offset 0 read all ones (`0xFFFFFFFF` in every word), the vfio region read failing,
+and writing the original `0xF4FFF400` back did not restore it. The move to the ring's top
+(`0xFF740000`) is not a valid FB window for this device, and the aperture needs a device reset, which the
+next boot's function-level reset provides.
+
+The VBIOS ring therefore cannot be reached by moving the FB window to it. The remaining path is the
+guest's own mapping of the top VRAM, if the VBIOS or the miniport creates one.
