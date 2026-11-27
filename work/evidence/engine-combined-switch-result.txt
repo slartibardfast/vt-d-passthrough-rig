@@ -1,0 +1,22 @@
+The combined graft plus the peer's device switch was booted in run `engine-combined-switch` on
+2026-11-27.
+
+What changed: `work/candidates/combined-hawaii-switch.sys` (sha256 0b4ef87c...) carries the combined
+descriptor, dispatch and SMC graft with `sub eax,0x67B0` at file 0x119D4F and checksum 0x00830d35. It was
+written into a copy of the base channel as `drv/ati2mtag.sys` and read back byte for byte
+(`work/channels/combined-switch.img`, sha256 05cdf7ce...). The boot used the stock `CA178340.inf`, so the
+switch on the combined graft was the only change from the earlier combined baseline.
+
+The host series at BAR 5 offset 0x8010:
+
+  01:48:03  0x00003028   first sample, before the driver starts the engine
+  01:48:13  0xA0003028   busy from here, and 54 of 55 samples read this
+  01:48:10  ati2mtag.sys loads at 0xfffffadfaaf49000
+  01:48:13  ati2cqag.dll loads at 0xfffff97fff507000
+  01:53:40  the guest bugchecks 0xEA, then the debug path takes 0x7F (argument 1 = 0x8)
+
+The run contract is `session_ready=False desktop_reached=False`.
+
+The switch on the combined graft does not move the idle word. The engine still starts, stays busy, and
+the guest still fails at the same point, so the peer's remaining piece is the ASIC descriptor geometry
+that the x32 patch corrected.
