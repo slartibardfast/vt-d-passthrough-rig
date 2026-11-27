@@ -5,6 +5,7 @@ The stock x64 miniport has `sub eax,0x6640` at file 0x119D4F. The peer's working
 same device-ID switch to `sub eax,0x67B0`, so the 0x67B0 device record selects Hawaii's data instead of an
 unrelated ASIC's. This builder changes the immediate, recomputes the PE checksum, and writes the candidate.
 """
+import argparse
 import struct
 import sys
 
@@ -31,7 +32,11 @@ def checksum(data):
 
 
 def main():
-    data = bytearray(open(SRC, "rb").read())
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base", default=SRC)
+    ap.add_argument("--out", default=DST)
+    args = ap.parse_args()
+    data = bytearray(open(args.base, "rb").read())
     if data[OFF:OFF + 5] != BEFORE:
         print("the switch at %#x is %s, not the stock immediate" % (OFF, data[OFF:OFF + 5].hex(" ")),
               file=sys.stderr)
@@ -41,7 +46,7 @@ def main():
     opt = e + 24
     struct.pack_into("<I", data, opt + 64, 0)
     struct.pack_into("<I", data, opt + 64, checksum(data))
-    with open(DST, "wb") as f:
+    with open(args.out, "wb") as f:
         f.write(data)
     print("switch at %#x: %s -> %s; checksum %#010x"
           % (OFF, BEFORE.hex(" "), AFTER.hex(" "), struct.unpack_from("<I", data, opt + 64)[0]))
