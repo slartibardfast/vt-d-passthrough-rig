@@ -244,3 +244,14 @@ allocation or the VBIOS's own ring. The 2D DLL carries the reset path: `mov 0x80
 and the wait reads `[aperture+0x8010]` at RVAs `0x2440D`, `0x244D2` and `0x2F6F7`. The call order between
 the reset and the wait is the next static question, because the reset that would clear a pre-boot packet
 sits in a function the wait may never reach.
+
+## The ring is outside both live VM contexts
+
+`engine-vm4` read the CIK VM context registers through BAR 5 while the engine was busy.
+`VM_CONTEXT0_PAGE_TABLE_START_ADDR` is `0x0FF70000`, `END_ADDR` `0x0FFF5FFF`, `BASE_ADDR` `0x0F40BBCF`;
+the context 1 base, start and end are all zero, and `CP_RB0_BASE` is `0xFF740000`. The ring page
+`0xFF740` is far below the GART's first page, and context 1 is disabled, so the ring is in neither live
+mapping: it is a VRAM address left by the pre-boot path, and the BAR 0 window cannot see it because the
+FB window sits at `0xF4000000`. The next step is to move the FB window to `0xFF740000` with a correct
+four-byte write, which the earlier KD attempt got wrong (it reported `actual=0x8` for a four-byte
+payload), or to have the GPU copy the page out.
